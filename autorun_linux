@@ -3,23 +3,21 @@
 SCRIPT_PATH="$1"
 
 if [ -z "$SCRIPT_PATH" ]; then
-  echo "Usage: $0 /diskmon.py" # diskmon.py script path
+  echo "Usage: $0 /path/to/diskmon.py"
   exit 1
 fi
 
-# Check if python3 is installed
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 is not installed or not in PATH."
   exit 1
 fi
 
-# Check if cron job exists
-(crontab -l 2>/dev/null | grep -F "@reboot python3 $SCRIPT_PATH") && {
+# Check if daily 5:00 cron job exists
+(crontab -l 2>/dev/null | grep -F "0 5 * * * python3 $SCRIPT_PATH") && {
   echo "Cron job already exists."
   exit 0
 }
 
-# Add cron job
-(crontab -l 2>/dev/null; echo "@reboot python3 $SCRIPT_PATH > /dev/null 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "0 5 * * * python3 $SCRIPT_PATH > /dev/null 2>&1") | crontab -
 
-echo "Cron job added to run script at reboot."
+echo "Cron job added to run script daily at 05:00."
