@@ -46,7 +46,8 @@ python3 diskmon.py
   "smtp_user": "your-email@example.com",
   "smtp_pass": "your-password",
   "email_from": "your-email@example.com",
-  "email_to": "recipient@example.com"
+  "email_to": "recipient@example.com",
+  "filelocation": "/full/path/to/diskmon.py"
 }
 ```
 
@@ -57,6 +58,7 @@ python3 diskmon.py
 - `smtp_pass`: SMTP login password.
 - `email_from`: Email address used as sender.
 - `email_to`: Recipient email address.
+- `filelocation`: Full path to the diskmon.py script.
 
 ---
 
