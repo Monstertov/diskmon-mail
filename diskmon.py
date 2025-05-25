@@ -9,8 +9,29 @@ import socket
 try:
     import psutil
 except ImportError:
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'psutil'])
-    import psutil
+    try:
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', 'psutil'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        import psutil
+    except subprocess.CalledProcessError as e:
+        err_str = str(e)
+        if 'externally-managed-environment' in err_str or 'python3-' in err_str:
+            try:
+                subprocess.check_call(
+                    ['sudo', 'apt', 'install', 'python3-psutil', '-y'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                import psutil
+            except subprocess.CalledProcessError:
+                print("Please install psutil manually (e.g. sudo apt install python3-psutil) and rerun.")
+                sys.exit(1)
+        else:
+            print("Please install psutil manually and rerun.")
+            sys.exit(1)
 
 from email.message import EmailMessage
 
@@ -68,3 +89,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
