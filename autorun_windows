@@ -2,13 +2,32 @@
 # - Daily 05:00 run
 # - Startup run if 05:00 run did not happen
 
+# Load filelocation from config.json
+$configPath = "C:\config.json"
+if (-not (Test-Path $configPath)) {
+    Write-Host "Config file not found: $configPath"
+    exit 1
+}
+
+try {
+    $config = Get-Content $configPath | ConvertFrom-Json
+} catch {
+    Write-Host "Failed to parse config.json"
+    exit 1
+}
+
+$diskmonScript = $config.filelocation
+if ([string]::IsNullOrEmpty($diskmonScript)) {
+    Write-Host "'filelocation' not set in config.json"
+    exit 1
+}
+
 $pythonExe = (Get-Command python).Source
 if (-not $pythonExe) {
     Write-Host "Python not found in PATH."
     exit 1
 }
 
-$diskmonScript = "C:\diskmon.py"
 $markerFile = "C:\diskmon_last_run.txt"
 
 # Paths for wrapper scripts

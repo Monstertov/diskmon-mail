@@ -1,14 +1,21 @@
 #!/bin/bash
 
-SCRIPT_PATH="$1"
-
-if [ -z "$SCRIPT_PATH" ]; then
-  echo "Usage: $0 /path/to/diskmon.py"
-  exit 1
-fi
+CONFIG_PATH="config.json"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 is not installed or not in PATH."
+  exit 1
+fi
+
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "Config file '$CONFIG_PATH' not found."
+  exit 1
+fi
+
+SCRIPT_PATH=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('filelocation', ''))")
+
+if [ -z "$SCRIPT_PATH" ]; then
+  echo "'filelocation' not set in $CONFIG_PATH."
   exit 1
 fi
 
