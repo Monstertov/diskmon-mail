@@ -1,0 +1,70 @@
+# Full setup script for DiskMonitor autorun with:
+# - Daily 05:00 run
+# - Startup run if 05:00 run did not happen
+
+$pythonExe = (Get-Command python).Source
+if (-not $pythonExe) {
+    Write-Host "Python not found in PATH."
+    exit 1
+}
+
+$diskmonScript = "C:\diskmon.py"
+$markerFile = "C:\diskmon_last_run.txt"
+
+# Paths for wrapper scripts
+$dailyWrapper = "C:\diskmon_run.ps1"
+$startupWrapper = "C:\diskmon_startup.ps1"
+
+# Create the daily run wrapper script
+@"
+python `"$diskmonScript`"
+
+if (\$LASTEXITCODE -eq 0) {
+    Set-Content -Path `"$markerFile`" -Value (Get-Date -Format yyyy-MM-dd)
+}
+"@ | Set-Content -Path $dailyWrapper -Encoding UTF8
+
+# Create the startup wrapper script
+@"
+\$markerPath = `"$markerFile`"
+\$today = Get-Date -Format yyyy-MM-dd
+
+if (Test-Path \$markerPath) {
+    \$lastRun = Get-Content \$markerPath
+    if (\$lastRun -eq \$today) {
+        exit 0
+    }
+}
+
+python `"$diskmonScript`"
+
+if (\$LASTEXITCODE -eq 0) {
+    Set-Content -Path \$markerPath -Value \$today
+}
+"@ | Set-Content -Path $startupWrapper -Encoding UTF8
+
+# Task names
+$taskNameDaily = "DiskMonitorDaily"
+$taskNameStartup = "DiskMonitorStartup"
+
+# Remove existing tasks if present
+schtasks /Delete /TN $taskNameDaily /F 2>$null
+schtasks /Delete /TN $taskNameStartup /F 2>$null
+
+# Create daily task at 05:00
+schtasks /Create /TN $taskNameDaily /TR "powershell -NoProfile -ExecutionPolicy Bypass -File `"$dailyWrapper`"" /SC DAILY /ST 05:00 /RL HIGHEST /F
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Scheduled task '$taskNameDaily' created to run daily at 05:00."
+} else {
+    Write-Host "Failed to create scheduled task '$taskNameDaily'."
+}
+
+# Create startup task
+schtasks /Create /TN $taskNameStartup /TR "powershell -NoProfile -ExecutionPolicy Bypass -File `"$startupWrapper`"" /SC ONSTART /RL HIGHEST /F
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Scheduled task '$taskNameStartup' created to run at system startup."
+} else {
+    Write-Host "Failed to create scheduled task '$taskNameStartup'."
+}
