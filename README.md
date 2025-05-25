@@ -20,6 +20,7 @@ Monitors disk free space and sends email alerts when free space drops below a co
 - Python 3.6+
 - Internet connection for sending email
 - Access to SMTP server
+- Python package psutil (pip install psutil or apt install python3-psutil)
 
 ---
 
