@@ -3,6 +3,8 @@ import os
 import smtplib
 import subprocess
 import sys
+import json
+import socket
 
 try:
     import psutil
@@ -12,20 +14,28 @@ except ImportError:
 
 from email.message import EmailMessage
 
+CONFIG_PATH = 'config.json'
+
 if os.name == 'nt':  # Windows
     CHECK_PATH = 'C:\\'
 else:  # Linux / macOS
     CHECK_PATH = '/'
 
 THRESHOLD_PERCENT = 10
-MAIL_ENABLED = False  # Set to True to enable sending mail
 
-SMTP_SERVER = 'smtp.example.com'
-SMTP_PORT = 587
-SMTP_USER = 'your-email@example.com'
-SMTP_PASS = 'your-password'
-EMAIL_FROM = SMTP_USER
-EMAIL_TO = 'recipient@example.com'
+def load_config(path):
+    with open(path, 'r') as f:
+        return json.load(f)
+
+config = load_config(CONFIG_PATH)
+
+MAIL_ENABLED = config.get('mail_enabled', False)
+SMTP_SERVER = config.get('smtp_server', 'smtp.example.com')
+SMTP_PORT = config.get('smtp_port', 587)
+SMTP_USER = config.get('smtp_user', 'your-email@example.com')
+SMTP_PASS = config.get('smtp_pass', 'your-password')
+EMAIL_FROM = config.get('email_from', SMTP_USER)
+EMAIL_TO = config.get('email_to', 'recipient@example.com')
 
 def get_free_percentage(path):
     usage = psutil.disk_usage(path)
@@ -36,9 +46,11 @@ def send_alert(free_percent):
         print(f"[TEST MODE] Alert: Disk free space is below threshold: {free_percent:.2f}% remaining. Mail not sent.")
         return
 
+    hostname = socket.gethostname()
+
     msg = EmailMessage()
     msg.set_content(f'Disk free space is below threshold: {free_percent:.2f}% remaining.')
-    msg['Subject'] = 'Disk Space Alert'
+    msg['Subject'] = f'Disk Space Alert on {hostname}'
     msg['From'] = EMAIL_FROM
     msg['To'] = EMAIL_TO
 
