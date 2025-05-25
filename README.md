@@ -64,52 +64,13 @@ python3 diskmon.py
 
 ### Windows
 
-Create a scheduled task to run at startup. Example PowerShell script:
+Create a scheduled task to run at startup. Use the autorun_windows script that creates a task that runs daily at 5:00 or on boot.
 
-```powershell
-$taskName = "DiskMonitorTask"
-$pythonExe = (Get-Command python).Source
-$scriptPath = "C:\path\to\diskmon.py"
-$action = "$pythonExe `"$scriptPath`""
 
-schtasks /Create /TN $taskName /TR $action /SC ONSTART /RL HIGHEST /F
-```
 
 ### Linux (daily cron job at 05:00)
 
-Use this shell script to add a cron job that runs the script daily at 05:00:
-
-```bash
-#!/bin/bash
-
-SCRIPT_PATH="$1"
-
-if [ -z "$SCRIPT_PATH" ]; then
-  echo "Usage: $0 /path/to/diskmon.py"
-  exit 1
-fi
-
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is not installed or not in PATH."
-  exit 1
-fi
-
-# Check if cron job exists
-(crontab -l 2>/dev/null | grep -F "0 5 * * * python3 $SCRIPT_PATH") && {
-  echo "Cron job already exists."
-  exit 0
-}
-
-(crontab -l 2>/dev/null; echo "0 5 * * * python3 $SCRIPT_PATH > /dev/null 2>&1") | crontab -
-
-echo "Cron job added to run script daily at 05:00."
-```
-
-Run this script with the full path to your `diskmon.py` file:
-
-```bash
-./autorun_linux /home/user/diskmon.py
-```
+Use the autorun_linux script to install a cronjob that runs daily at 5:00.
 
 ---
 
