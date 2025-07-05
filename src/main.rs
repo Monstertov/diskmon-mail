@@ -11,11 +11,7 @@ use clap::Parser;
 use colored::*;
 
 #[cfg(target_os = "windows")]
-use winapi::um::{winioctl, fileapi, handleapi, errhandlingapi, sysinfoapi};
-#[cfg(target_os = "windows")]
-use std::ffi::CString;
-#[cfg(target_os = "windows")]
-use std::ptr;
+use winapi::um::sysinfoapi;
 
 const CONFIG_PATH: &str = "config.yaml";
 
@@ -221,9 +217,25 @@ fn is_virtualized() -> bool {
 fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
     use std::fs;
     use std::path::Path;
+    use std::process::Command;
 
     if debug {
         println!("[DEBUG] Getting SMART status for: {}", disk_name);
+    }
+
+    // Check if smartmontools is installed
+    let smartctl_available = Command::new("smartctl").arg("--version").output().is_ok();
+    
+    // Always show smartmontools detection status (not just in debug mode)
+    if smartctl_available {
+        println!("smartmontools detected - using smartctl for enhanced disk health monitoring");
+    } else {
+        println!("smartmontools not detected - falling back to kernel interfaces");
+        println!("For better disk health monitoring, install smartmontools:");
+        println!("  Debian/Ubuntu: sudo apt-get install smartmontools");
+        println!("  CentOS/RHEL: sudo yum install smartmontools");
+        println!("  Fedora: sudo dnf install smartmontools");
+        println!("  Arch: sudo pacman -S smartmontools");
     }
 
     // Map mount point to device name using /proc/mounts
@@ -255,27 +267,250 @@ fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<Str
         println!("[DEBUG] Found device: {}", device_name);
     }
 
-    // Try to read SMART data directly from sysfs
+    // Extract device name without partition (e.g., /dev/sda1 -> /dev/sda, /dev/mmcblk0p1 -> /dev/mmcblk0)
+    let device_base = if let Some(name) = device_name.split('/').last() {
+        if name.starts_with("mmcblk") {
+            // For MMC devices, remove partition number (e.g., mmcblk0p1 -> mmcblk0)
+            let base = name.chars().take_while(|c| !c.is_ascii_digit() || *c == '0').collect::<String>();
+            format!("/dev/{}", base)
+        } else if name.starts_with("nvme") {
+            // For NVMe devices, remove partition number (e.g., nvme0n1p1 -> nvme0n1)
+            let parts: Vec<&str> = name.split('p').collect();
+            format!("/dev/{}", parts[0])
+        } else if name.starts_with("sd") || name.starts_with("hd") {
+            // For SATA/IDE devices, remove partition number (e.g., sda1 -> sda)
+            let base = name.chars().take_while(|c| c.is_alphabetic()).collect::<String>();
+            format!("/dev/{}", base)
+        } else {
+            device_name.clone()
+        }
+    } else {
+        device_name.clone()
+    };
+
+    if debug {
+        println!("[DEBUG] Device base: {}", device_base);
+    }
+
     let mut smart_status = None;
     let mut serial_number = None;
     let mut model = None;
     let mut brand = None;
     let mut is_raid = false;
 
-    // Extract device name without partition (e.g., /dev/sda1 -> sda)
-    let device_base = if let Some(name) = device_name.split('/').last() {
-        if name.starts_with("sd") || name.starts_with("hd") || name.starts_with("nvme") {
-            // Remove partition number for block devices
-            name.chars().take_while(|c| c.is_alphabetic()).collect::<String>()
-        } else {
-            name.to_string()
+    // Check for RAID indicators
+    if device_name.contains("md") || device_name.contains("dm-") {
+        is_raid = true;
+        if debug {
+            println!("[DEBUG] RAID device detected: {}", device_name);
         }
-    } else {
-        return (None, None, None, None, false);
-    };
+    }
 
+    // First, try to use smartctl if available
+    if smartctl_available {
+        if debug {
+            println!("[DEBUG] Using smartctl for device: {}", device_base);
+        }
+        
+        // Special handling for different device types
+        let smartctl_args = if device_base.contains("mmcblk") {
+            // For MMC/SD cards, try different device types
+            vec![
+                vec!["-H", "-i", &device_base],
+                vec!["-H", "-i", "-d", "auto", &device_base],
+                vec!["-H", "-i", "-d", "sat", &device_base],
+            ]
+        } else if device_base.contains("nvme") {
+            // For NVMe devices
+            vec![
+                vec!["-H", "-i", &device_base],
+                vec!["-H", "-i", "-d", "nvme", &device_base],
+            ]
+        } else {
+            // For SATA/IDE devices
+            vec![
+                vec!["-H", "-i", &device_base],
+                vec!["-H", "-i", "-d", "auto", &device_base],
+                vec!["-H", "-i", "-d", "sat", &device_base],
+            ]
+        };
+
+        // Try different smartctl command variations
+        for args in smartctl_args {
+            if debug {
+                println!("[DEBUG] Trying smartctl with args: {:?}", args);
+            }
+            
+            if let Ok(smartctl_output) = Command::new("smartctl").args(&args).output() {
+                if smartctl_output.status.success() || smartctl_output.status.code() == Some(4) {
+                    // Exit code 4 means some SMART or other ATA command failed, but basic info might be available
+                    if let Ok(output_str) = String::from_utf8(smartctl_output.stdout) {
+                        if debug {
+                            println!("[DEBUG] smartctl output: {}", output_str);
+                        }
+
+                        // Parse SMART status from smartctl output
+                        for line in output_str.lines() {
+                            let line = line.trim();
+                            
+                            // Check for SMART overall-health self-assessment
+                            if line.contains("SMART overall-health self-assessment test result:") {
+                                if line.contains("PASSED") {
+                                    smart_status = Some("OK".to_string());
+                                } else if line.contains("FAILED") {
+                                    smart_status = Some("FAILING".to_string());
+                                } else {
+                                    smart_status = Some("WARNING".to_string());
+                                }
+                            }
+                            
+                            // Alternative SMART status formats
+                            if line.contains("SMART Health Status:") {
+                                if line.contains("OK") {
+                                    smart_status = Some("OK".to_string());
+                                } else {
+                                    smart_status = Some("WARNING".to_string());
+                                }
+                            }
+                            
+                            // Check for device model
+                            if line.starts_with("Device Model:") || line.starts_with("Model Number:") {
+                                model = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                            }
+                            
+                            // Check for serial number
+                            if line.starts_with("Serial Number:") {
+                                serial_number = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                            }
+                            
+                            // Check for vendor/product
+                            if line.starts_with("Vendor:") {
+                                brand = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                            }
+
+                            // Check for MMC/SD card specific info
+                            if line.starts_with("Device:") {
+                                model = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                            }
+                        }
+
+                        // If we got useful information from smartctl, use it
+                        if smart_status.is_some() || model.is_some() || serial_number.is_some() {
+                            if debug {
+                                println!("[DEBUG] Using smartctl results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}", 
+                                         smart_status, model, serial_number, brand);
+                            }
+                            
+                            // If no SMART status but we got device info, assume OK
+                            if smart_status.is_none() && (model.is_some() || serial_number.is_some()) {
+                                smart_status = Some("OK".to_string());
+                            }
+                            
+                            return (smart_status, serial_number, brand, model, is_raid);
+                        }
+                    }
+                }
+            }
+        }
+        
+        if debug {
+            println!("[DEBUG] smartctl didn't provide useful information, falling back to kernel methods");
+        }
+    }
+
+    // Special handling for Raspberry Pi SD cards and MMC devices
+    if device_base.contains("mmcblk") {
+        if debug {
+            println!("[DEBUG] MMC/SD card detected, using specialized detection methods");
+        }
+        
+        // Check dmesg for MMC/SD card errors
+        if let Ok(dmesg_output) = Command::new("dmesg").output() {
+            if let Ok(dmesg_str) = String::from_utf8(dmesg_output.stdout) {
+                let device_short = device_base.split('/').last().unwrap_or("");
+                let mut error_count = 0;
+                
+                for line in dmesg_str.lines().rev().take(1000) { // Check last 1000 lines
+                    if line.to_lowercase().contains(device_short) {
+                        if line.to_lowercase().contains("error") || 
+                           line.to_lowercase().contains("fail") || 
+                           line.to_lowercase().contains("timeout") ||
+                           line.to_lowercase().contains("crc") {
+                            error_count += 1;
+                            if debug {
+                                println!("[DEBUG] Found MMC error in dmesg: {}", line);
+                            }
+                        }
+                    }
+                }
+                
+                if error_count > 0 {
+                    smart_status = Some("WARNING".to_string());
+                    if debug {
+                        println!("[DEBUG] Found {} MMC errors in dmesg", error_count);
+                    }
+                } else {
+                    smart_status = Some("OK".to_string());
+                    if debug {
+                        println!("[DEBUG] No MMC errors found in dmesg");
+                    }
+                }
+            }
+        }
+        
+        // Try to get MMC device info from sysfs
+        let device_short = device_base.split('/').last().unwrap_or("");
+        let sysfs_path = format!("/sys/block/{}/device", device_short);
+        if Path::new(&sysfs_path).exists() {
+            // Read MMC device name
+            if let Ok(name_data) = fs::read_to_string(format!("{}/name", sysfs_path)) {
+                model = Some(name_data.trim().to_string());
+            }
+            
+            // Read MMC CID (Card Identification) for serial
+            if let Ok(cid_data) = fs::read_to_string(format!("{}/cid", sysfs_path)) {
+                // CID contains serial number in a specific format
+                if cid_data.len() >= 32 {
+                    let serial_hex = &cid_data[18..26]; // Serial number is at specific position
+                    if let Ok(serial_num) = u32::from_str_radix(serial_hex, 16) {
+                        serial_number = Some(format!("{:08X}", serial_num));
+                    }
+                }
+            }
+            
+            // Read MMC manufacturer ID
+            if let Ok(manfid_data) = fs::read_to_string(format!("{}/manfid", sysfs_path)) {
+                if let Ok(manfid) = manfid_data.trim().parse::<u32>() {
+                    brand = Some(match manfid {
+                        0x01 => "Panasonic".to_string(),
+                        0x02 => "Toshiba".to_string(),
+                        0x03 => "SanDisk".to_string(),
+                        0x13 => "Micron".to_string(),
+                        0x15 => "Samsung".to_string(),
+                        0x27 => "Phison".to_string(),
+                        0x28 => "Lexar".to_string(),
+                        0x41 => "Kingston".to_string(),
+                        0x6f => "STMicroelectronics".to_string(),
+                        0x74 => "Transcend".to_string(),
+                        0x76 => "Patriot".to_string(),
+                        _ => format!("Unknown (0x{:02X})", manfid),
+                    });
+                }
+            }
+        }
+        
+        if smart_status.is_some() {
+            if debug {
+                println!("[DEBUG] Using MMC-specific results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}", 
+                         smart_status, model, serial_number, brand);
+            }
+            return (smart_status, serial_number, brand, model, is_raid);
+        }
+    }
+
+    // Fallback to kernel-based methods
     if debug {
-        println!("[DEBUG] Device base: {}", device_base);
+        println!("[DEBUG] Using kernel-based health detection");
     }
 
     // Try to read from /sys/block/{device}/device/
@@ -365,10 +600,63 @@ fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<Str
                 }
             }
         }
+
+        // Additional kernel-based health checks
+        if smart_status.is_none() {
+            // Check dmesg for disk errors
+            if let Ok(dmesg_output) = Command::new("dmesg").output() {
+                if let Ok(dmesg_str) = String::from_utf8(dmesg_output.stdout) {
+                    // Look for recent disk-related errors
+                    let error_patterns = [
+                        &format!("{}.*error", device_base),
+                        &format!("{}.*fail", device_base),
+                        &format!("{}.*warning", device_base),
+                        &format!("{}.*i/o error", device_base),
+                    ];
+
+                    for _pattern in &error_patterns {
+                        if dmesg_str.lines().any(|line| {
+                            line.to_lowercase().contains(&device_base.to_lowercase()) &&
+                            (line.to_lowercase().contains("error") ||
+                             line.to_lowercase().contains("fail") ||
+                             line.to_lowercase().contains("warning") ||
+                             line.to_lowercase().contains("i/o error"))
+                        }) {
+                            smart_status = Some("WARNING".to_string());
+                            if debug {
+                                println!("[DEBUG] Found disk errors in dmesg for {}", device_base);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Check for filesystem errors (read-only check)
+            if let Ok(fsck_output) = Command::new("fsck")
+                .args(&["-n", &device_name])
+                .output() {
+                if !fsck_output.status.success() {
+                    if let Ok(fsck_str) = String::from_utf8(fsck_output.stderr) {
+                        if fsck_str.contains("error") || fsck_str.contains("corruption") {
+                            smart_status = Some("WARNING".to_string());
+                            if debug {
+                                println!("[DEBUG] Found filesystem errors for {}", device_name);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If still no status, default to OK
+            if smart_status.is_none() {
+                smart_status = Some("OK".to_string());
+            }
+        }
     }
 
     if debug {
-        println!("[DEBUG] SMART status: {:?}, Model: {:?}, Serial: {:?}, Brand: {:?}, RAID: {}", 
+        println!("[DEBUG] Kernel-based results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}, RAID={}", 
                  smart_status, model, serial_number, brand, is_raid);
     }
 
@@ -378,7 +666,6 @@ fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<Str
 #[cfg(target_os = "windows")]
 fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<String>, Option<String>, Option<String>, bool) {
     use std::process::Command;
-    use std::str::FromStr;
 
     if debug {
         println!("[DEBUG] Getting disk health status for: {}", disk_name);
@@ -396,6 +683,162 @@ fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<Str
 
     if debug {
         println!("[DEBUG] Looking for drive letter: {}", drive_letter);
+    }
+
+    // Check if smartmontools is installed (smartctl.exe)
+    let smartctl_available = Command::new("smartctl").arg("--version").output().is_ok() ||
+                            Command::new("C:\\Program Files\\smartmontools\\bin\\smartctl.exe").arg("--version").output().is_ok();
+    
+    // Always show smartmontools detection status (not just in debug mode)
+    if smartctl_available {
+        println!("smartmontools detected - using smartctl for enhanced disk health monitoring");
+    } else {
+        println!("smartmontools not detected - falling back to PowerShell/WMI");
+        println!("For better disk health monitoring, install smartmontools:");
+        println!("  Download from: https://www.smartmontools.org/wiki/Download#InstalltheWindowspackage");
+        println!("  Install to: C:\\Program Files\\smartmontools");
+    }
+
+    // Try smartctl first if available
+    if smartctl_available {
+        if debug {
+            println!("[DEBUG] Attempting to use smartctl for drive {}", drive_letter);
+        }
+
+        // First, map drive letter to physical disk using PowerShell
+        let ps_script = format!(r#"
+            try {{
+                # Get the logical disk
+                $logicalDisk = Get-WmiObject -Class Win32_LogicalDisk -Filter "DeviceID='{}:'"
+                if (-not $logicalDisk) {{
+                    Write-Output "LOGICAL_DISK_NOT_FOUND"
+                    exit 1
+                }}
+                
+                # Get the partition associated with this logical disk
+                $partition = Get-WmiObject -Query "ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{}:'}} WHERE AssocClass=Win32_LogicalDiskToPartition"
+                if (-not $partition) {{
+                    Write-Output "PARTITION_NOT_FOUND"
+                    exit 1
+                }}
+                
+                # Get the physical disk associated with this partition
+                $physicalDisk = Get-WmiObject -Query "ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='$($partition.DeviceID)'}} WHERE AssocClass=Win32_DiskDriveToDiskPartition"
+                if (-not $physicalDisk) {{
+                    Write-Output "PHYSICAL_DISK_NOT_FOUND"
+                    exit 1
+                }}
+                
+                # Output the physical disk index
+                Write-Output $physicalDisk.Index
+            }}
+            catch {{
+                Write-Output "ERROR: $($_.Exception.Message)"
+                exit 1
+            }}
+        "#, drive_letter, drive_letter);
+
+        if let Ok(output) = Command::new("powershell").args(&["-Command", &ps_script]).output() {
+            if output.status.success() {
+                if let Ok(disk_index_str) = String::from_utf8(output.stdout) {
+                    let disk_index = disk_index_str.trim();
+                    if !disk_index.starts_with("ERROR") && !disk_index.contains("NOT_FOUND") {
+                        if debug {
+                            println!("[DEBUG] Found physical disk index: {}", disk_index);
+                        }
+
+                        // Try different smartctl commands
+                        let device_path = format!("/dev/pd{}", disk_index);
+                        let smartctl_commands = vec![
+                            vec!["smartctl", "-H", "-i", &device_path],
+                            vec!["C:\\Program Files\\smartmontools\\bin\\smartctl.exe", "-H", "-i", &device_path],
+                            vec!["smartctl", "-H", "-i", "-d", "auto", &device_path],
+                            vec!["C:\\Program Files\\smartmontools\\bin\\smartctl.exe", "-H", "-i", "-d", "auto", &device_path],
+                        ];
+
+                        for cmd_args in smartctl_commands {
+                            if debug {
+                                println!("[DEBUG] Trying smartctl command: {:?}", cmd_args);
+                            }
+
+                            if let Ok(smartctl_output) = Command::new(&cmd_args[0]).args(&cmd_args[1..]).output() {
+                                if smartctl_output.status.success() || smartctl_output.status.code() == Some(4) {
+                                    if let Ok(output_str) = String::from_utf8(smartctl_output.stdout) {
+                                        if debug {
+                                            println!("[DEBUG] smartctl output: {}", output_str);
+                                        }
+
+                                        let mut smart_status = None;
+                                        let mut serial_number = None;
+                                        let mut model = None;
+                                        let mut brand = None;
+
+                                        // Parse smartctl output
+                                        for line in output_str.lines() {
+                                            let line = line.trim();
+                                            
+                                            // Check for SMART overall-health self-assessment
+                                            if line.contains("SMART overall-health self-assessment test result:") {
+                                                if line.contains("PASSED") {
+                                                    smart_status = Some("OK".to_string());
+                                                } else if line.contains("FAILED") {
+                                                    smart_status = Some("FAILING".to_string());
+                                                } else {
+                                                    smart_status = Some("WARNING".to_string());
+                                                }
+                                            }
+                                            
+                                            // Alternative SMART status formats
+                                            if line.contains("SMART Health Status:") {
+                                                if line.contains("OK") {
+                                                    smart_status = Some("OK".to_string());
+                                                } else {
+                                                    smart_status = Some("WARNING".to_string());
+                                                }
+                                            }
+                                            
+                                            // Check for device model
+                                            if line.starts_with("Device Model:") || line.starts_with("Model Number:") {
+                                                model = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                                            }
+                                            
+                                            // Check for serial number
+                                            if line.starts_with("Serial Number:") {
+                                                serial_number = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                                            }
+                                            
+                                            // Check for vendor
+                                            if line.starts_with("Vendor:") {
+                                                brand = Some(line.split(':').nth(1).unwrap_or("").trim().to_string());
+                                            }
+                                        }
+
+                                        // If we got useful information from smartctl, use it
+                                        if smart_status.is_some() || model.is_some() || serial_number.is_some() {
+                                            if debug {
+                                                println!("[DEBUG] Using smartctl results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}", 
+                                                         smart_status, model, serial_number, brand);
+                                            }
+                                            
+                                            // If no SMART status but we got device info, assume OK
+                                            if smart_status.is_none() && (model.is_some() || serial_number.is_some()) {
+                                                smart_status = Some("OK".to_string());
+                                            }
+                                            
+                                            return (smart_status, serial_number, brand, model, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if debug {
+            println!("[DEBUG] smartctl didn't provide useful information, falling back to PowerShell/WMI");
+        }
     }
 
     // Use PowerShell to map logical drive to physical disk and get SMART status
@@ -633,17 +1076,29 @@ fn send_system_report(cfg: &Config, disks: &[DiskInfo], system_info: &SystemInfo
         Err(_) => "unknown".to_string(),
     };
     
+    // Check if smartmontools is available for the email report
+    let smartctl_available = if cfg!(windows) {
+        std::process::Command::new("smartctl").arg("--version").output().is_ok() ||
+        std::process::Command::new("C:\\Program Files\\smartmontools\\bin\\smartctl.exe").arg("--version").output().is_ok()
+    } else {
+        std::process::Command::new("smartctl").arg("--version").output().is_ok()
+    };
+
     let mut body = format!(
         "System Disk Report\n\n\
          System: {} {}\n\
          Hostname: {}\n\
          Report Time: {}\n\
-         Mode: {}\n\n",
+         Mode: {}\n\
+         SMART Tools: {}\n\
+         Virtualization: {}\n\n",
         os_info,
         if system_info.is_virtualized { "(Virtualized)" } else { "" },
         system_info.hostname,
         datetime,
-        if forced { "Forced Report" } else if debug { "Debug Mode" } else { "Normal Scan" }
+        if forced { "Forced Report" } else if debug { "Debug Mode" } else { "Normal Scan" },
+        if smartctl_available { "smartmontools detected - enhanced disk health monitoring" } else { "smartmontools not detected - using fallback methods" },
+        if system_info.is_virtualized { "Yes - Running in virtualized environment" } else { "No - Running on physical hardware" }
     );
 
     // Add disk summary
