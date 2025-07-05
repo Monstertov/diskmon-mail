@@ -1,0 +1,11 @@
+mail_enabled: true
+smtp_server: smtp.example.com
+smtp_port: 587
+smtp_user: your-email@example.com
+smtp_pass: your-password
+email_from: your-email@example.com
+email_to: recipient@example.com
+smtp_security: starttls # options: none, starttls, ssl
+
+# Disk Monitoring Configuration
+threshold_percent: 10.0 # Disk space threshold percentage (default: 10.0) 
