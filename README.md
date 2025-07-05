@@ -10,7 +10,6 @@ A lightweight, cross-platform disk space monitoring tool that sends email alerts
 
 ## What It Does
 
-DiskMon-Mail automatically:
 - Monitors all local disks (excluding USB drives and network mounts)
 - Checks available disk space against your configured threshold
 - Sends email alerts when disk space drops below the threshold
@@ -22,7 +21,7 @@ DiskMon-Mail automatically:
 - **Cross-Platform**: Windows, Linux (x86_64, ARM64, ARM32)
 - **Lightweight**: Single executable, no installation required
 - **Configurable**: Customizable threshold and email settings
-- **Automated**: Perfect for scheduled tasks and cron jobs
+- **Automation**: Perfect for scheduled tasks and cron jobs
 - **SMTP Support**: Works with any SMTP server (Gmail, Office 365, custom servers)
 - **Test Mode**: Built-in SMTP testing capability
 
