@@ -316,6 +316,7 @@ For Raspberry Pi systems with SD cards, smartmontools provides limited support, 
 For issues, feature requests, or contributions:
 - Review the example configuration file
 - Test SMTP settings with the `--force-mail` parameter
+- Test disk health info with the `--smart` parameter
 
 ---
 
