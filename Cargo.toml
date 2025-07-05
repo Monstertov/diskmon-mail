@@ -1,6 +1,6 @@
 [package]
 name = "diskmon"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [[bin]]
@@ -10,12 +10,16 @@ path = "src/main.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.30"
 hostname = "0.3"
 clap = { version = "4.0", features = ["derive"] }
-colored = "3.0"
-
-# Mail stack
+colored = "2.0"
 lettre = { version = "0.11", features = ["smtp-transport", "builder", "tokio1", "tokio1-native-tls"] }
 native-tls = { version = "0.2", features = ["vendored"] }
 openssl = { version = "0.10", features = ["vendored"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["winioctl", "fileapi", "handleapi", "errhandlingapi", "sysinfoapi"] }
+wmi = "0.13"

@@ -6,24 +6,17 @@
 [![Linux](https://custom-icon-badges.demolab.com/badge/Linux-FFFFFF?logo=linux&logoColor=black)](https://linuxfoundation.org/)
 [![ARM](https://custom-icon-badges.demolab.com/badge/ARM-0091BD?logo=arm&logoColor=white)](https://www.arm.com/)
 
-A lightweight, cross-platform disk space monitoring tool that sends email alerts when disk space falls below a configurable threshold. Perfect for system administrators who need automated disk space monitoring across Windows, Linux, and ARM-based systems.
+A lightweight, cross-platform disk space monitoring tool that sends email alerts when disk space falls below a configurable threshold and includes optional disk health monitoring. Perfect for system administrators who need automated disk space monitoring and health status across Windows, Linux, and ARM-based systems.
 
 ## What It Does
 
 - Monitors all local disks (excluding USB drives and network mounts)
 - Checks available disk space against your configured threshold
-- Sends email alerts when disk space drops below the threshold
 - Provides detailed system information in alerts
 - Works silently in the background
+- Gathers SMART status information (may take a few seconds on Windows)
+- Sends email alerts when disk space drops below the threshold or when disk errors are detected
 
-## Features
-
-- **Cross-Platform**: Windows, Linux (x86_64, ARM64, ARM32)
-- **Lightweight**: Single executable, no installation required
-- **Configurable**: Customizable threshold and email settings
-- **Automation**: Perfect for scheduled tasks and cron jobs
-- **SMTP Support**: Works with any SMTP server (Gmail, Office 365, custom servers)
-- **Test Mode**: Built-in SMTP testing capability
 
 ## Quick Start
 
@@ -53,7 +46,11 @@ Download the appropriate binary for your system from the [GitHub releases page](
 
 # Normal run (only sends alerts if disk space is low)
 ./diskmon-mail
+
+# Display SMART status for all disks
+./diskmon-mail --smart
 ```
+> **Note on SMART Status**: The ability to read SMART status is not guaranteed and depends on the disk, controller, and operating system. On Linux, the tool first tries to use `smartctl` (smartmontools) if available, then falls back to built-in kernel interfaces. On Windows, it uses PowerShell and WMI. The tool does not require external dependencies but will use them if available for better accuracy. On RAID arrays, SMART status may not be accurate. The tool may take a few seconds to gather SMART information, especially on Windows systems. See the [Enhanced Disk Health Monitoring (Optional)](#enhanced-disk-health-monitoring-optional) section for more details.
 
 ## Configuration
 
@@ -71,6 +68,10 @@ smtp_security: starttls # options: none, starttls, ssl
 
 # Disk Monitoring Configuration
 threshold_percent: 10.0 # Alert when disk space drops below 10%
+send_mail_on_unknown_status: false # Send email if SMART status is unknown
+
+# Health Check Configuration
+health_check_enabled: true # Enable/disable disk health checks (default: true)
 ```
 
 ### Configuration Options
@@ -83,6 +84,8 @@ threshold_percent: 10.0 # Alert when disk space drops below 10%
 - **email_to**: Recipient email address
 - **smtp_security**: Security method (none, starttls, ssl)
 - **threshold_percent**: Disk space threshold (default: 10.0%)
+- **send_mail_on_unknown_status**: Send email if SMART status is unknown (default: false)
+- **health_check_enabled**: Enable/disable disk health checks (default: true)
 
 ## Automation Examples
 
@@ -242,6 +245,55 @@ For detailed output, check the console output for:
 - SMTP connection status
 - Email sending confirmation
 
+## Enhanced Disk Health Monitoring (Optional)
+
+For more accurate disk health monitoring, you can install **smartmontools**:
+
+### Linux Installation
+
+**Debian/Ubuntu:**
+```bash
+sudo apt-get update
+sudo apt-get install smartmontools
+```
+
+**CentOS/RHEL/Rocky/AlmaLinux:**
+```bash
+sudo yum install smartmontools
+# or for newer versions:
+sudo dnf install smartmontools
+```
+
+**Fedora:**
+```bash
+sudo dnf install smartmontools
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S smartmontools
+```
+
+**openSUSE:**
+```bash
+sudo zypper install smartmontools
+```
+
+### Windows Installation
+
+1. Download the Windows installer from: https://www.smartmontools.org/wiki/Download#InstalltheWindowspackage
+2. Run the `setup.exe` installer
+3. Install to the default location: `C:\Program Files\smartmontools`
+4. The tool will automatically detect and use smartctl.exe for enhanced disk monitoring
+
+### Raspberry Pi / SD Card Monitoring
+
+For Raspberry Pi systems with SD cards, smartmontools provides limited support, but the tool includes specialized MMC/SD card health detection that:
+- Checks system logs (dmesg) for I/O errors
+- Reads manufacturer information from the kernel
+- Detects CRC errors and timeouts
+- Provides SD card-specific health status
+
 ## System Requirements
 
 - **Windows**: Windows 7 or later
@@ -249,6 +301,8 @@ For detailed output, check the console output for:
 - **ARM**: Raspberry Pi, ARM servers, embedded systems
 - **Memory**: Minimal (typically < 10MB RAM)
 - **Network**: Internet access for SMTP (if using external email)
+- **Performance**: Initial disk information gathering may take 2-5 seconds, especially on Windows systems with multiple drives
+- **Optional**: smartmontools for enhanced disk health monitoring (not required but recommended)
 
 ## Security Notes
 
@@ -266,4 +320,4 @@ For issues, feature requests, or contributions:
 
 ---
 
-**DiskMon-Mail** - Simple, reliable disk space monitoring for system administrators.
+**DiskMon-Mail** - Simple, reliable disk space monitoring and health status for system administrators.

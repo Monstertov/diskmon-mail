@@ -5,10 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+
+## [0.2.0] - 2025-07-05
 
 ### Added
-- Future features and improvements will be tracked here
+- **Windows Disk Status Support**: Full production-ready SMART status monitoring for Windows systems
+- **Linux Disk Status Support**: Complete SMART status monitoring for Linux systems using hybrid approach (smartctl + kernel interfaces)
+- **WMI Integration**: Proper mapping of logical drives to physical drives using Windows Management Instrumentation
+- **Cross-Platform SMART Support**: Consistent SMART status monitoring across Windows and Linux platforms
+- **Smartmontools**: Uses smartctl if available, falls back to kernel interfaces (dmesg, fsck, /proc/diskstats) or WMI
+
+
+### Changed
+- **Windows SMART Implementation**: Replaced placeholder with robust WMI-based SMART status detection
+- **Linux SMART Implementation**: Replaced placeholder with hybrid smartctl + kernel-based SMART status detection
+- **Drive Mapping**: Accurate mapping between drive letters (C:, D:, etc.) and physical drives
+- **Mount Point Mapping**: Accurate mapping between mount points and device names on Linux
+- **Documentation**: Updated README to reflect hybrid SMART status support approach
+
+
+### Technical Improvements
+- **WMI Associations**: Uses proper WMI associations (Win32_LogicalDiskToPartition, Win32_DiskDriveToDiskPartition)
+- **Physical Drive Detection**: Maps logical drives to physical drives for accurate SMART data
+- **Cross-Platform Compatibility**: Maintains existing Linux support while adding Windows functionality
 
 ## [0.1.0] - 2025-07-05
 
