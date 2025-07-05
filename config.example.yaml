@@ -13,3 +13,6 @@ send_mail_on_unknown_status: false # Send email if SMART status is unknown
 
 # Debug Configuration
 debug: false # Enable debug output for troubleshooting
+
+# Health Check Configuration
+health_check_enabled: true # Enable/disable disk health checks (default: true)

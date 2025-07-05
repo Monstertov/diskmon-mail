@@ -67,6 +67,7 @@ struct Config {
     threshold_percent: Option<f64>, // Disk space threshold percentage
     send_mail_on_unknown_status: Option<bool>,
     debug: Option<bool>, // Enable debug output
+    health_check_enabled: Option<bool>, // Enable/disable disk health checks (default: true)
 }
 
 // Check if terminal supports colors
@@ -982,9 +983,12 @@ fn get_smart_status(_disk_name: &str, _debug: bool) -> (Option<String>, Option<S
     (None, None, None, None, false)
 }
 
-fn get_monitored_disks(debug: bool) -> Vec<DiskInfo> {
+fn get_monitored_disks(cfg: &Config, debug: bool) -> Vec<DiskInfo> {
     let disks = Disks::new_with_refreshed_list();
     let mut monitored_disks = Vec::new();
+    
+    // Check if health checks are enabled (default to true if not specified)
+    let health_check_enabled = cfg.health_check_enabled.unwrap_or(true);
 
     for disk in disks.list() {
         let mount_point = match disk.mount_point().to_str() {
@@ -1023,13 +1027,18 @@ fn get_monitored_disks(debug: bool) -> Vec<DiskInfo> {
 
         let file_system = disk.file_system().to_str().unwrap_or("Unknown").to_string();
 
-        // For Windows, pass the mount point (drive letter) instead of disk name
-        let smart_input = if cfg!(windows) {
-            &mount_point
+        // Only perform health checks if enabled
+        let (smart_status, serial_number, brand, model, is_raid) = if health_check_enabled {
+            // For Windows, pass the mount point (drive letter) instead of disk name
+            let smart_input = if cfg!(windows) {
+                &mount_point
+            } else {
+                disk.name().to_str().unwrap_or("")
+            };
+            get_smart_status(smart_input, debug)
         } else {
-            disk.name().to_str().unwrap_or("")
+            (None, None, None, None, false)
         };
-        let (smart_status, serial_number, brand, model, is_raid) = get_smart_status(smart_input, debug);
 
         monitored_disks.push(DiskInfo {
             mount_point,
@@ -1321,7 +1330,7 @@ fn main() {
     let debug = cfg.debug.unwrap_or(false);
     
     // Get all monitored disks
-    let disks = get_monitored_disks(debug);
+    let disks = get_monitored_disks(&cfg, debug);
     
     if disks.is_empty() {
         eprintln!("{} This could indicate a system error or all disks are removable/network drives.", 

@@ -1,0 +1,18 @@
+mail_enabled: false
+smtp_server: smtp.gmail.com
+smtp_port: 587
+smtp_user: test@example.com
+smtp_pass: test
+email_from: test@example.com
+email_to: test@example.com
+smtp_security: starttls
+
+# Disk Monitoring Configuration
+threshold_percent: 10.0
+send_mail_on_unknown_status: false
+
+# Debug Configuration
+debug: false
+
+# Health Check Configuration
+health_check_enabled: false 

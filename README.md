@@ -68,6 +68,10 @@ smtp_security: starttls # options: none, starttls, ssl
 
 # Disk Monitoring Configuration
 threshold_percent: 10.0 # Alert when disk space drops below 10%
+send_mail_on_unknown_status: false # Send email if SMART status is unknown
+
+# Health Check Configuration
+health_check_enabled: true # Enable/disable disk health checks (default: true)
 ```
 
 ### Configuration Options
@@ -81,6 +85,7 @@ threshold_percent: 10.0 # Alert when disk space drops below 10%
 - **smtp_security**: Security method (none, starttls, ssl)
 - **threshold_percent**: Disk space threshold (default: 10.0%)
 - **send_mail_on_unknown_status**: Send email if SMART status is unknown (default: false)
+- **health_check_enabled**: Enable/disable disk health checks (default: true)
 
 ## Automation Examples
 
