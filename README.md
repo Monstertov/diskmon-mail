@@ -100,6 +100,52 @@ threshold_percent: 10.0 # Alert when disk space drops below 10%
 schtasks /create /tn "DiskMon-Mail" /tr "C:\path\to\diskmon-mail.exe" /sc daily /st 00:00 /f
 ```
 
+### Windows - Run on Boot (Recommended for Desktop Users)
+
+For desktop users who don't leave their computer running overnight, running DiskMon-Mail on system boot is more effective than scheduled tasks.
+
+#### Method 1: Task Scheduler (Recommended)
+
+1. **Open Task Scheduler** (search for "Task Scheduler" in Start menu)
+2. **Create Basic Task**:
+   - Name: `DiskMon-Mail Boot Check`
+   - Description: `Check disk space on system startup`
+3. **Trigger**: Select "When the computer starts"
+4. **Action**: Start a program
+5. **Program/script**: `C:\path\to\diskmon-mail.exe`
+6. **Start in**: `C:\path\to\` (directory containing config.yaml)
+7. **Finish**: Check "Open the Properties dialog" and click Finish
+8. **Properties**:
+   - **General tab**: Check "Run whether user is logged on or not"
+   - **Conditions tab**: Uncheck "Start the task only if the computer is on AC power"
+   - **Settings tab**: Check "Allow task to be run on demand"
+
+**Command Line (Run as Administrator):**
+```cmd
+schtasks /create /tn "DiskMon-Mail Boot Check" /tr "C:\path\to\diskmon-mail.exe" /sc onstart /ru "SYSTEM" /f
+```
+
+#### Method 2: Startup Folder
+
+1. Press `Win + R`, type `shell:startup`, and press Enter
+2. Create a shortcut to `diskmon-mail.exe` in the startup folder
+3. Right-click the shortcut → Properties
+4. In "Start in" field, enter the directory containing `config.yaml`
+
+**Note**: This method runs when the user logs in, not when the system boots.
+
+#### Method 3: Registry (Advanced)
+
+1. Press `Win + R`, type `regedit`, and press Enter
+2. Navigate to: `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
+3. Create a new String Value named `DiskMon-Mail`
+4. Set the value to: `"C:\path\to\diskmon-mail.exe"`
+
+**Command Line (Run as Administrator):**
+```cmd
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "DiskMon-Mail" /t REG_SZ /d "C:\path\to\diskmon-mail.exe" /f
+```
+
 ### Linux - Cron Job
 
 Add to crontab (`crontab -e`):
