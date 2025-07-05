@@ -1,5 +1,6 @@
 # DiskMon-Mail
 
+[![GitHub Release](https://img.shields.io/github/v/release/Monstertov/diskmon-mail?style=flat-square)](https://github.com/Monstertov/diskmon-mail/releases)
 [![Rust](https://custom-icon-badges.demolab.com/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=microsoft&logoColor=white)](https://www.microsoft.com/windows)
 [![Linux](https://custom-icon-badges.demolab.com/badge/Linux-FFFFFF?logo=linux&logoColor=black)](https://linuxfoundation.org/)
