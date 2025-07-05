@@ -314,7 +314,6 @@ For Raspberry Pi systems with SD cards, smartmontools provides limited support, 
 ## Support
 
 For issues, feature requests, or contributions:
-- Check the [development documentation](development.md) for technical details
 - Review the example configuration file
 - Test SMTP settings with the `--force-mail` parameter
 
