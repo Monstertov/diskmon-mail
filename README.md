@@ -6,7 +6,7 @@
 [![Linux](https://custom-icon-badges.demolab.com/badge/Linux-FFFFFF?logo=linux&logoColor=black)](https://linuxfoundation.org/)
 [![ARM](https://custom-icon-badges.demolab.com/badge/ARM-0091BD?logo=arm&logoColor=white)](https://www.arm.com/)
 
-A lightweight, cross-platform disk space monitoring tool that sends email alerts when disk space falls below a configurable threshold. Perfect for system administrators who need automated disk space monitoring across Windows, Linux, and ARM-based systems.
+A lightweight, cross-platform disk space monitoring tool that sends email alerts when disk space falls below a configurable threshold and includes optional disk health monitoring. Perfect for system administrators who need automated disk space monitoring and health status across Windows, Linux, and ARM-based systems.
 
 ## What It Does
 
@@ -50,7 +50,7 @@ Download the appropriate binary for your system from the [GitHub releases page](
 # Display SMART status for all disks
 ./diskmon-mail --smart
 ```
-> **Note on SMART Status**: The ability to read SMART status is not guaranteed and depends on the disk, controller, and operating system. On Linux, the tool first tries to use `smartctl` (smartmontools) if available, then falls back to built-in kernel interfaces. On Windows, it uses PowerShell and WMI. The tool does not require external dependencies but will use them if available for better accuracy. On RAID arrays, SMART status may not be accurate. The tool may take a few seconds to gather SMART information, especially on Windows systems.
+> **Note on SMART Status**: The ability to read SMART status is not guaranteed and depends on the disk, controller, and operating system. On Linux, the tool first tries to use `smartctl` (smartmontools) if available, then falls back to built-in kernel interfaces. On Windows, it uses PowerShell and WMI. The tool does not require external dependencies but will use them if available for better accuracy. On RAID arrays, SMART status may not be accurate. The tool may take a few seconds to gather SMART information, especially on Windows systems. See the [Enhanced Disk Health Monitoring (Optional)](#enhanced-disk-health-monitoring-optional) section for more details.
 
 ## Configuration
 
@@ -274,4 +274,4 @@ For issues, feature requests, or contributions:
 
 ---
 
-**DiskMon-Mail** - Simple, reliable disk space monitoring for system administrators.
+**DiskMon-Mail** - Simple, reliable disk space monitoring and health status for system administrators.
