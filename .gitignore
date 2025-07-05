@@ -25,3 +25,5 @@ Cargo.lock
 # dev
 install
 development.md
+publish.sh
+releases/
