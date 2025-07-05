@@ -9,6 +9,7 @@ use hostname::get as get_hostname;
 use serde_yaml;
 use clap::Parser;
 use colored::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "windows")]
 use winapi::um::sysinfoapi;
@@ -146,10 +147,13 @@ fn validate_config(config: &Config) -> Result<(), String> {
     if config.smtp_port == 0 {
         missing_keys.push("smtp_port (must be > 0)");
     }
-    // smtp_user and smtp_pass: only require presence, not non-empty
-    // (Serde will always provide a value if the key exists, even if empty)
-    // debug is optional and not required for config validity
-    // (do not add to missing_keys)
+    
+    // Validate threshold_percent if provided
+    if let Some(threshold) = config.threshold_percent {
+        if threshold < 1.0 || threshold > 100.0 {
+            missing_keys.push("threshold_percent (must be between 1.0 and 100.0)");
+        }
+    }
     
     if !missing_keys.is_empty() {
         return Err(format!("Missing or invalid required configuration keys: {}", missing_keys.join(", ")));
@@ -1066,14 +1070,16 @@ fn send_system_report(cfg: &Config, disks: &[DiskInfo], system_info: &SystemInfo
     let os_info = format!("{} {} {}", system_info.os_name, system_info.os_version, system_info.architecture);
     let threshold = cfg.threshold_percent.unwrap_or(10.0);
     
-    let now = std::time::SystemTime::now();
-    let datetime = match now.duration_since(std::time::UNIX_EPOCH) {
-        Ok(dur) => {
-            let secs = dur.as_secs();
-            let tm = chrono_time(secs);
-            format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", tm.0, tm.1, tm.2, tm.3, tm.4, tm.5)
+    // Format current time in DD-MM-YYYY HH:MM:SS format
+    let datetime = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => {
+            let secs = duration.as_secs();
+            let datetime = chrono::DateTime::from_timestamp(secs as i64, 0)
+                .unwrap_or_else(|| chrono::Utc::now());
+            let local_datetime = datetime.with_timezone(&chrono::Local);
+            local_datetime.format("%d-%m-%Y %H:%M:%S").to_string()
         },
-        Err(_) => "unknown".to_string(),
+        Err(_) => "unknown time".to_string(),
     };
     
     // Check if smartmontools is available for the email report
@@ -1122,6 +1128,24 @@ fn send_system_report(cfg: &Config, disks: &[DiskInfo], system_info: &SystemInfo
     body.push_str("Detailed Disk Information:\n");
     body.push_str(&"=".repeat(50));
     body.push_str("\n\n");
+
+    // Add warnings for RAID and missing health info
+    let mut no_health_info = false;
+    let mut any_raid = false;
+    for disk in disks {
+        if disk.smart_status.is_none() || disk.smart_status.as_deref() == Some("N/A") {
+            no_health_info = true;
+        }
+        if disk.is_raid {
+            any_raid = true;
+        }
+    }
+    if no_health_info {
+        body.push_str("\nWARNING: No health information available for one or more disks. This tool should NOT be used for health monitoring tasks on these systems.\n");
+    }
+    if any_raid {
+        body.push_str("\nWARNING: RAID device(s) detected. Health information may be unavailable or unreliable. This tool should NOT be used for health monitoring tasks on RAID systems.\n");
+    }
 
     for (i, disk) in disks.iter().enumerate() {
         let total_gb = disk.total_space as f64 / (1024.0 * 1024.0 * 1024.0);
@@ -1211,7 +1235,8 @@ fn send_system_report(cfg: &Config, disks: &[DiskInfo], system_info: &SystemInfo
         body.push_str("\n");
     }
 
-    body.push_str("This is an automated report from DiskMon-Mail.");
+    body.push_str("This is an automated report from DiskMon-Mail.\n");
+    body.push_str("For more information, visit: https://github.com/Monstertov/diskmon-mail");
     
     let email = Message::builder()
         .from(cfg.email_from.parse().map_err(|e| format!("Invalid sender email address: {e}"))?)
@@ -1362,6 +1387,24 @@ fn main() {
                  raid_output);
     }
 
+    // Add warnings for RAID and missing health info
+    let mut no_health_info = false;
+    let mut any_raid = false;
+    for disk in &disks {
+        if disk.smart_status.is_none() || disk.smart_status.as_deref() == Some("N/A") {
+            no_health_info = true;
+        }
+        if disk.is_raid {
+            any_raid = true;
+        }
+    }
+    if no_health_info {
+        println!("{}", "WARNING: No health information available for one or more disks. This tool should NOT be used for health monitoring tasks on these systems.".red().bold());
+    }
+    if any_raid {
+        println!("{}", "WARNING: RAID device(s) detected. Health information may be unavailable or unreliable. This tool should NOT be used for health monitoring tasks on RAID systems.".red().bold());
+    }
+
     if cli.smart {
         println!("\n{}", "SMART Status Details:".blue().bold());
         for disk in &disks {
@@ -1460,48 +1503,4 @@ fn main() {
         eprintln!("{}", "Some errors occurred during alert processing.".red().bold());
         std::process::exit(2);
     }
-}
-
-// Helper function to convert UNIX timestamp to (year, month, day, hour, min, sec) in UTC
-fn chrono_time(secs: u64) -> (u32, u32, u32, u32, u32, u32) {
-    use std::time::UNIX_EPOCH;
-    let t = UNIX_EPOCH + std::time::Duration::from_secs(secs);
-    let datetime = t.duration_since(UNIX_EPOCH).unwrap();
-    let days = datetime.as_secs() / 86400;
-    let secs_of_day = datetime.as_secs() % 86400;
-    let hour = (secs_of_day / 3600) as u32;
-    let min = ((secs_of_day % 3600) / 60) as u32;
-    let sec = (secs_of_day % 60) as u32;
-    // Use a simple algorithm for date (not handling leap seconds, but fine for reporting)
-    let (year, month, day) = unix_days_to_ymd(days as i64);
-    (year, month, day, hour, min, sec)
-}
-
-fn unix_days_to_ymd(mut days: i64) -> (u32, u32, u32) {
-    // 1970-01-01 is day 0
-    let mut year = 1970;
-    let mut month = 1;
-    let mut day = 1;
-    loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if days < days_in_year {
-            break;
-        }
-        days -= days_in_year;
-        year += 1;
-    }
-    let month_lengths = [31, if is_leap_year(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    for (i, &mlen) in month_lengths.iter().enumerate() {
-        if days < mlen {
-            month = (i + 1) as u32;
-            day = (days + 1) as u32;
-            break;
-        }
-        days -= mlen;
-    }
-    (year as u32, month, day)
-}
-
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
