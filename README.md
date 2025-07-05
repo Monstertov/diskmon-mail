@@ -29,11 +29,18 @@ DiskMon-Mail automatically:
 
 ### 1. Download the Binary
 
-Download the appropriate binary for your system from the [releases page](https://github.com/yourusername/diskmon-mail/releases).
+Download the appropriate binary for your system from the [GitHub releases page](https://github.com/Monstertov/diskmon-mail/releases).
+
+**Available platforms:**
+- **Windows**: `diskmon-mail-windows-x86_64.zip`
+- **Linux x86_64**: `diskmon-mail-linux-x86_64.zip`
+- **Linux ARM64**: `diskmon-mail-linux-aarch64.zip`
+- **Linux ARM32**: `diskmon-mail-linux-armv7.zip`
+- **Linux ARM**: `diskmon-mail-linux-arm.zip`
 
 ### 2. Set Up Configuration
 
-1. Place the `diskmon-mail` executable in your desired directory
+1. Extract the downloaded zip file
 2. Copy `config.example.yaml` to the same directory as the executable
 3. Rename it to `config.yaml`
 4. Edit the configuration file with your settings
