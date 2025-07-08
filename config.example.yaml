@@ -1,18 +1,13 @@
 mail_enabled: true
-smtp_server: smtp.gmail.com
+smtp_server: smtp.example.com
 smtp_port: 587
-smtp_user: your-email@gmail.com
-smtp_pass: your-app-password
-email_from: your-email@gmail.com
-email_to: admin@yourcompany.com
-smtp_security: starttls # options: none, starttls, ssl
-
-# Disk Monitoring Configuration
-threshold_percent: 10.0 # Alert when disk space drops below 10%
-send_mail_on_unknown_status: false # Send email if SMART status is unknown
-
-# Debug Configuration
-debug: false # Enable debug output for troubleshooting
-
-# Health Check Configuration
-health_check_enabled: true # Enable/disable disk health checks (default: true)
+smtp_user: user@example.com
+smtp_pass: password
+email_from: admin@example.com
+email_to: alerts@example.com
+smtp_security: starttls
+threshold_percent: 10.0
+send_mail_on_unknown_status: false
+debug: false
+health_check_enabled: true
+friendly_name: "Example device"

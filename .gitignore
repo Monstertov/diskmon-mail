@@ -28,3 +28,6 @@ development.md
 publish.sh
 releases/
 RELEASE.md
+TODO.md
+backup.sh
+.clinerules
