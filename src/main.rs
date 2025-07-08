@@ -118,6 +118,20 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
     // Check if health checks are enabled (default to true if not specified)
     let health_check_enabled = cfg.health_check_enabled.unwrap_or(true);
 
+    if debug {
+        println!("[DEBUG] sysinfo found {} disks:", disks.list().len());
+        for (i, disk) in disks.list().iter().enumerate() {
+            println!("[DEBUG] Disk {}: mount_point={:?}, name={:?}, fs={:?}, total={} available={}",
+                i,
+                disk.mount_point(),
+                disk.name(),
+                disk.file_system(),
+                disk.total_space(),
+                disk.available_space()
+            );
+        }
+    }
+
     for (disk_idx, disk) in disks.list().iter().enumerate() {
         let mount_point = match disk.mount_point().to_str() {
             Some(path) => path.to_string(),
@@ -156,6 +170,8 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
         // Exclude disks if in excluded_disks
         let is_excluded = if cfg!(windows) {
             excluded.iter().enumerate().any(|(i, ex)| {
+                let ex = ex.trim();
+                if ex.is_empty() { return false; }
                 let ex = ex.to_uppercase();
                 let disp = display_name.to_uppercase();
                 let found = disp.contains(&ex);
@@ -164,12 +180,17 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
             })
         } else {
             excluded.iter().enumerate().any(|(i, ex)| {
+                let ex = ex.trim();
+                if ex.is_empty() { return false; }
                 let dev = disk.name().to_str().unwrap_or("");
                 let found = dev == ex;
                 if found { found_excluded[i] = true; }
                 found
             })
         };
+        if debug && is_excluded {
+            println!("[DEBUG] Excluding disk: {} (display_name: {}, dev: {:?})", mount_point, display_name, disk.name());
+        }
         if is_excluded { continue; }
 
         let file_system = disk.file_system().to_str().unwrap_or("Unknown").to_string();
@@ -216,6 +237,19 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
     // Store not found for reporting
     if !excluded_not_found.is_empty() {
         println!("[WARNING] The following excluded_disks were not found: {}", excluded_not_found.join(", "));
+    }
+    if debug {
+        println!("[DEBUG] Final monitored disks:");
+        for (i, disk) in monitored_disks.iter().enumerate() {
+            println!("[DEBUG] Monitored Disk {}: mount_point={}, display_name={}, fs={}, total={}, available={}",
+                i,
+                disk.mount_point,
+                disk.display_name,
+                disk.file_system,
+                disk.total_space,
+                disk.available_space
+            );
+        }
     }
     monitored_disks
 }
@@ -504,11 +538,6 @@ body.push_str(&format!(
 }
 
 fn main() {
-    // Initialize color support based on terminal capabilities
-    init_colors();
-    
-    let cli = Cli::parse();
-
     // Load and validate configuration
     let cfg = match config::load_config(config::CONFIG_PATH) {
         Ok(config) => config,
@@ -517,6 +546,18 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    // Get debug setting and print debug info immediately (Linux and Windows)
+    let debug = cfg.debug.unwrap_or(false);
+    if debug {
+        println!("[DEBUG] Debug mode enabled");
+        println!("[DEBUG] Loaded config: {:#?}", cfg);
+    }
+
+    // Initialize color support based on terminal capabilities
+    init_colors();
+    
+    let cli = Cli::parse();
 
     // Print smartmontools detection ONCE
     let smartctl_available = if cfg!(windows) {
@@ -533,6 +574,9 @@ fn main() {
 
     // Get system information
     let system_info = system::get_system_info();
+    if debug {
+        println!("[DEBUG] System info: {:#?}", system_info);
+    }
     println!("{} {} {} {} ({})", 
              "System:".blue().bold(), 
              system_info.os_name.green(), 
@@ -543,9 +587,6 @@ fn main() {
     // Show loading message
     println!("{}", "Loading information, please wait...".yellow().italic());
 
-    // Get debug setting
-    let debug = cfg.debug.unwrap_or(false);
-    
     // Get all monitored disks
     let disks = get_monitored_disks(&cfg, debug);
     

@@ -3,7 +3,7 @@ use std::path::Path;
 
 pub const CONFIG_PATH: &str = "config.yaml";
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 pub struct Config {
     pub mail_enabled: bool,
     pub smtp_server: String,
