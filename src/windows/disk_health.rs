@@ -22,16 +22,7 @@ pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option
     // Check if smartmontools is installed (smartctl.exe)
     let smartctl_available = Command::new("smartctl").arg("--version").output().is_ok() ||
                             Command::new("C:\\Program Files\\smartmontools\\bin\\smartctl.exe").arg("--version").output().is_ok();
-    
-    // Always show smartmontools detection status (not just in debug mode)
-    if smartctl_available {
-        println!("smartmontools detected - using smartctl for enhanced disk health monitoring");
-    } else {
-        println!("smartmontools not detected - falling back to PowerShell/WMI");
-        println!("For better disk health monitoring, install smartmontools:");
-        println!("  Download from: https://www.smartmontools.org/wiki/Download#InstalltheWindowspackage");
-        println!("  Install to: C:\\Program Files\\smartmontools");
-    }
+    // Do not print smartmontools detection here; only print debug output if debug is true
 
     // Try smartctl first if available
     if smartctl_available {
