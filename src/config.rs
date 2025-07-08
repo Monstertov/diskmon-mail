@@ -76,7 +76,7 @@ fn validate_config(config: &Config) -> Result<(), String> {
             missing_keys.push("smtp_security (must be one of: none, starttls, ssl)");
         }
         if sec == "none" {
-            warnings.push("SMTP security is set to 'none'. This is insecure and not recommended.");
+            warnings.push("SMTP security is set to 'none'. This is insecure and not recommended.".to_string());
         }
     }
     
@@ -90,17 +90,17 @@ fn validate_config(config: &Config) -> Result<(), String> {
     
     // Warn if debug is enabled
     if config.debug.unwrap_or(false) {
-        warnings.push("Debug mode is enabled. This may expose sensitive information in logs.");
+        warnings.push("Debug mode is enabled. This may expose sensitive information in logs.".to_string());
     }
     
     // Warn if health checks are disabled
     if config.health_check_enabled == Some(false) {
-        warnings.push("Disk health checks are disabled. Only free space will be monitored.");
+        warnings.push("Disk health checks are disabled. Only free space will be monitored.".to_string());
     }
     
     // Warn if send_mail_on_unknown_status is enabled
     if config.send_mail_on_unknown_status == Some(true) {
-        warnings.push("send_mail_on_unknown_status is enabled. Emails will be sent even if SMART status is unknown.");
+        warnings.push("send_mail_on_unknown_status is enabled. Emails will be sent even if SMART status is unknown.".to_string());
     }
     
     // Validate excluded_disks
@@ -127,7 +127,7 @@ fn validate_config(config: &Config) -> Result<(), String> {
         return Err(format!("Missing or invalid required configuration keys: {}", missing_keys.join(", ")));
     }
     if !warnings.is_empty() {
-        eprintln!("[CONFIG WARNING] {}", warnings.join(" | "));
+        eprintln!("[CONFIG WARNING] {}", &warnings.join(" | "));
     }
     Ok(())
 }
