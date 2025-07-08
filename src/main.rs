@@ -65,6 +65,7 @@ struct Config {
     health_check_enabled: Option<bool>, // Enable/disable disk health checks (default: true)
     friendly_name: Option<String>, // Friendly name for the device
     smart_enabled: Option<bool>, // Enable/disable SMART status checks for alerts
+    excluded_disks: Option<Vec<String>>, // List of disks to exclude from monitoring
 }
 
 // Check if terminal supports colors
@@ -110,11 +111,14 @@ fn init_colors() {
 fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
     let mut monitored_disks = Vec::new();
+    let mut excluded_not_found = Vec::new();
+    let excluded = cfg.excluded_disks.clone().unwrap_or_default();
+    let mut found_excluded = vec![false; excluded.len()];
     
     // Check if health checks are enabled (default to true if not specified)
     let health_check_enabled = cfg.health_check_enabled.unwrap_or(true);
 
-    for disk in disks.list() {
+    for (disk_idx, disk) in disks.list().iter().enumerate() {
         let mount_point = match disk.mount_point().to_str() {
             Some(path) => path.to_string(),
             None => continue,
@@ -148,6 +152,25 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
         } else {
             mount_point.clone()
         };
+
+        // Exclude disks if in excluded_disks
+        let is_excluded = if cfg!(windows) {
+            excluded.iter().enumerate().any(|(i, ex)| {
+                let ex = ex.to_uppercase();
+                let disp = display_name.to_uppercase();
+                let found = disp.contains(&ex);
+                if found { found_excluded[i] = true; }
+                found
+            })
+        } else {
+            excluded.iter().enumerate().any(|(i, ex)| {
+                let dev = disk.name().to_str().unwrap_or("");
+                let found = dev == ex;
+                if found { found_excluded[i] = true; }
+                found
+            })
+        };
+        if is_excluded { continue; }
 
         let file_system = disk.file_system().to_str().unwrap_or("Unknown").to_string();
 
@@ -184,7 +207,16 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
             health_method,
         });
     }
-
+    // Collect excluded disks that were not found
+    for (i, found) in found_excluded.iter().enumerate() {
+        if !*found {
+            excluded_not_found.push(excluded[i].clone());
+        }
+    }
+    // Store not found for reporting
+    if !excluded_not_found.is_empty() {
+        println!("[WARNING] The following excluded_disks were not found: {}", excluded_not_found.join(", "));
+    }
     monitored_disks
 }
 

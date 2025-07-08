@@ -19,6 +19,7 @@ pub struct Config {
     pub health_check_enabled: Option<bool>, // Enable/disable disk health checks (default: true)
     pub smart_enabled: Option<bool>, // Enable/disable SMART-based alerts (default: true)
     pub friendly_name: Option<String>, // New: single friendly name
+    pub excluded_disks: Option<Vec<String>>, // List of disks to exclude (drive letters or device names)
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, String> {
@@ -100,6 +101,26 @@ fn validate_config(config: &Config) -> Result<(), String> {
     // Warn if send_mail_on_unknown_status is enabled
     if config.send_mail_on_unknown_status == Some(true) {
         warnings.push("send_mail_on_unknown_status is enabled. Emails will be sent even if SMART status is unknown.");
+    }
+    
+    // Validate excluded_disks
+    if let Some(ref excluded) = config.excluded_disks {
+        for disk in excluded {
+            if disk.trim().is_empty() {
+                continue; // Ignore empty values
+            }
+            if cfg!(windows) {
+                // Should be like "C:", "D:", etc.
+                if !(disk.len() == 2 && disk.chars().nth(1) == Some(':')) {
+                    warnings.push(format!("Invalid excluded disk '{}': must be a drive letter like 'C:'", disk));
+                }
+            } else {
+                // Should be like "sda", "nvme0n1", etc.
+                if disk.contains('/') || disk.is_empty() {
+                    warnings.push(format!("Invalid excluded disk '{}': must be a device name like 'sda' or 'nvme0n1'", disk));
+                }
+            }
+        }
     }
     
     if !missing_keys.is_empty() {

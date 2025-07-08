@@ -1,13 +1,15 @@
-mail_enabled: true
-smtp_server: smtp.example.com
-smtp_port: 587
-smtp_user: user@example.com
-smtp_pass: password
-email_from: admin@example.com
-email_to: alerts@example.com
-smtp_security: starttls
-threshold_percent: 10.0
-send_mail_on_unknown_status: false
-health_check_enabled: true
-smart_enabled: true
-friendly_name: "Example device"
+mail_enabled: true  # Enable or disable email alerts
+smtp_server: smtp.example.com  # SMTP server address
+smtp_port: 587  # SMTP server port
+smtp_user: user@example.com  # SMTP username (leave blank if not required)
+smtp_pass: password  # SMTP password (leave blank if not required)
+email_from: admin@example.com  # Sender email address
+email_to: alerts@example.com  # Recipient email address
+smtp_security: starttls  # SMTP security: none, starttls, or ssl
+threshold_percent: 10.0  # Alert if free space is below this percent (1.0-100.0)
+send_mail_on_unknown_status: false  # Send mail if SMART status is unknown
+excluded_disks: [""]  # List of disks to exclude (Linux: e.g. []"sda", "nvme0n1"]; Windows: e.g. ["C:", "D:"])
+debug: false  # Enable debug output (not recommended in production)
+health_check_enabled: true  # Enable disk health checks (disable to only check free space)
+smart_enabled: true  # Enable SMART-based alerts (disable to ignore SMART failures)
+friendly_name: "Example device"  # Optional: friendly name for this device in reports
