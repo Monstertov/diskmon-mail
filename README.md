@@ -54,38 +54,44 @@ Download the appropriate binary for your system from the [GitHub releases page](
 
 ## Configuration
 
-The `config.yaml` file contains all your settings:
+The `config.yaml` file contains all your settings. Example:
 
 ```yaml
-mail_enabled: true
-smtp_server: smtp.gmail.com
-smtp_port: 587
-smtp_user: your-email@gmail.com
-smtp_pass: your-app-password
-email_from: your-email@gmail.com
-email_to: admin@yourcompany.com
-smtp_security: starttls # options: none, starttls, ssl
-
-# Disk Monitoring Configuration
-threshold_percent: 10.0 # Alert when disk space drops below 10%
-send_mail_on_unknown_status: false # Send email if SMART status is unknown
-
-# Health Check Configuration
-health_check_enabled: true # Enable/disable disk health checks (default: true)
+mail_enabled: true  # Enable or disable email alerts
+smtp_server: smtp.example.com  # SMTP server address
+smtp_port: 587  # SMTP server port
+smtp_user: user@example.com  # SMTP username (leave blank if not required)
+smtp_pass: password  # SMTP password (leave blank if not required)
+email_from: admin@example.com  # Sender email address
+email_to: alerts@example.com  # Recipient email address
+smtp_security: starttls  # SMTP security: none, starttls, or ssl
+threshold_percent: 10.0  # Alert if free space is below this percent (1.0-100.0)
+send_mail_on_unknown_status: false  # Send mail if SMART status is unknown
+excluded_disks: [""]  # List of disks to exclude (Linux: e.g. "sda", "nvme0n1"; Windows: e.g. "C:", "D:"). Empty values are ignored.
+health_check_enabled: true  # Enable or disable disk health checks
+smart_enabled: true  # Enable or disable SMART-based alerts
+friendly_name: "MyServer"  # Optional: Friendly name for this system in alerts
 ```
 
 ### Configuration Options
 
-- **mail_enabled**: Set to `false` for test mode (no emails sent)
-- **smtp_server**: Your SMTP server address
-- **smtp_port**: SMTP port (587 for STARTTLS, 465 for SSL, 25 for none)
-- **smtp_user/smtp_pass**: Authentication credentials (can be empty for open relays)
-- **email_from**: Sender email address
-- **email_to**: Recipient email address
-- **smtp_security**: Security method (none, starttls, ssl)
-- **threshold_percent**: Disk space threshold (default: 10.0%)
-- **send_mail_on_unknown_status**: Send email if SMART status is unknown (default: false)
-- **health_check_enabled**: Enable/disable disk health checks (default: true)
+- **mail_enabled**: Set to `true` to send email alerts, or `false` to disable email notifications.
+- **smtp_server**: The address of your SMTP server for sending emails.
+- **smtp_port**: The port used by your SMTP server (commonly 25, 465, or 587).
+- **smtp_user**: The username for SMTP authentication. Leave blank if not required.
+- **smtp_pass**: The password for SMTP authentication. Leave blank if not required.
+- **email_from**: The email address that will appear as the sender.
+- **email_to**: The recipient email address for alerts.
+- **smtp_security**: Security protocol for SMTP. Options are:
+  - `none`: No encryption (not recommended)
+  - `starttls`: Use STARTTLS (recommended for most servers)
+  - `ssl`: Use SSL/TLS
+- **threshold_percent**: The minimum free disk space percentage before an alert is sent. Must be between 1.0 and 100.0.
+- **send_mail_on_unknown_status**: If set to `true`, an alert will be sent even if the disk health (SMART) status is unknown.
+- **excluded_disks**: List of disks to exclude from monitoring. For Linux, use device names (e.g., `"sda"`, `"nvme0n1"`). For Windows, use drive letters (e.g., `"C:"`, `"D:"`). Empty values are ignored.
+- **health_check_enabled**: Set to `true` to enable disk health checks (recommended). Set to `false` to only monitor free space.
+- **smart_enabled**: Set to `true` to enable SMART-based alerts. Set to `false` to ignore SMART status in alerting.
+- **friendly_name**: (Optional) A custom name for this system, shown in alert emails. Useful for identifying multiple systems.
 
 ## Automation Examples
 
