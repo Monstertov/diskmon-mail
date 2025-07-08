@@ -49,25 +49,6 @@ struct DiskInfo {
     health_method: String, // New: method used for health check
 }
 
-#[derive(serde::Deserialize)]
-struct Config {
-    mail_enabled: bool,
-    smtp_server: String,
-    smtp_port: u16,
-    smtp_user: String,
-    smtp_pass: String,
-    email_from: String,
-    email_to: String,
-    smtp_security: Option<String>, // "none", "starttls", "ssl"
-    threshold_percent: Option<f64>, // Disk space threshold percentage
-    send_mail_on_unknown_status: Option<bool>,
-    debug: Option<bool>, // Enable debug output
-    health_check_enabled: Option<bool>, // Enable/disable disk health checks (default: true)
-    friendly_name: Option<String>, // Friendly name for the device
-    smart_enabled: Option<bool>, // Enable/disable SMART status checks for alerts
-    excluded_disks: Option<Vec<String>>, // List of disks to exclude from monitoring
-}
-
 // Check if terminal supports colors
 fn supports_colors() -> bool {
     // Check if we're in a terminal that supports colors
@@ -132,7 +113,7 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
         }
     }
 
-    for (disk_idx, disk) in disks.list().iter().enumerate() {
+    for (_disk_idx, disk) in disks.list().iter().enumerate() {
         let mount_point = match disk.mount_point().to_str() {
             Some(path) => path.to_string(),
             None => continue,

@@ -5,7 +5,6 @@ use sysinfo::System;
 pub struct SystemInfo {
     pub os_name: String,
     pub os_version: String,
-    pub os_type: String,
     pub architecture: String,
     pub hostname: String,
     pub is_virtualized: bool,
@@ -19,13 +18,6 @@ pub fn get_system_info() -> SystemInfo {
     
     let os_name = System::name().unwrap_or_else(|| "Unknown OS".to_string());
     let os_version = System::os_version().unwrap_or_else(|| "Unknown Version".to_string());
-    let os_type = if cfg!(target_os = "linux") {
-        "Linux".to_string()
-    } else if cfg!(target_os = "windows") {
-        "Windows".to_string()
-    } else {
-        "Unknown".to_string()
-    };
     let architecture = if cfg!(target_arch = "x86_64") {
         "64-bit"
     } else if cfg!(target_arch = "x86") {
@@ -43,7 +35,6 @@ pub fn get_system_info() -> SystemInfo {
     SystemInfo {
         os_name,
         os_version,
-        os_type,
         architecture: architecture.to_string(),
         hostname,
         is_virtualized,
