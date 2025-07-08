@@ -1,3 +1,16 @@
+# Example configuration for diskmon-mail
+#
+# friendly_name: A human-friendly name for this device (e.g., customer, location, or purpose)
+# This is useful for sysadmins to identify the system in reports without memorizing hostnames.
+# Example:
+# friendly_name: "Customer A - Main Office"
+#
+# smart_enabled: Enable or disable SMART-based alerts (default: true)
+# If false, SMART errors/failures will not trigger email alerts.
+#
+# The friendly name will appear in the subject and body of email reports, after the hostname.
+#
+# Other config fields...
 mail_enabled: true
 smtp_server: smtp.example.com
 smtp_port: 587
@@ -10,4 +23,5 @@ threshold_percent: 10.0
 send_mail_on_unknown_status: false
 debug: false
 health_check_enabled: true
+smart_enabled: true
 friendly_name: "Example device"

@@ -17,6 +17,7 @@ pub struct Config {
     pub send_mail_on_unknown_status: Option<bool>,
     pub debug: Option<bool>, // Enable debug output
     pub health_check_enabled: Option<bool>, // Enable/disable disk health checks (default: true)
+    pub smart_enabled: Option<bool>, // Enable/disable SMART-based alerts (default: true)
     pub friendly_name: Option<String>, // New: single friendly name
 }
 

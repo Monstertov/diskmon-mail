@@ -64,6 +64,7 @@ struct Config {
     debug: Option<bool>, // Enable debug output
     health_check_enabled: Option<bool>, // Enable/disable disk health checks (default: true)
     friendly_name: Option<String>, // Friendly name for the device
+    smart_enabled: Option<bool>, // Enable/disable SMART status checks for alerts
 }
 
 // Check if terminal supports colors
@@ -671,8 +672,9 @@ fn main() {
             let is_smart_fail = disk.smart_status.as_deref().unwrap_or("OK").to_uppercase() != "OK";
             let send_on_unknown = cfg.send_mail_on_unknown_status.unwrap_or(false) && disk.smart_status.is_none();
             let debug_mode = debug; // Always send mail when debug is enabled
+            let smart_enabled = cfg.smart_enabled.unwrap_or(true);
 
-            if is_low_space || is_smart_fail || send_on_unknown || debug_mode {
+            if is_low_space || (smart_enabled && (is_smart_fail || send_on_unknown)) || debug_mode {
                 problem_disks.push(disk);
             }
         }
