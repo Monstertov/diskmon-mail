@@ -54,38 +54,62 @@ Download the appropriate binary for your system from the [GitHub releases page](
 
 ## Configuration
 
-The `config.yaml` file contains all your settings:
+The `config.yaml` file controls all monitoring and alerting behavior. As a system administrator, you use this file to:
+- Set up email notifications for disk space and health alerts
+- Define which SMTP server and credentials to use
+- Specify which disks to monitor or exclude
+- Set the disk space threshold for alerts
+- Enable or disable health checks and SMART-based alerts
+- Optionally set a friendly name for the system in reports
+
+**Example Configuration:**
 
 ```yaml
+# Enable or disable email alerts
 mail_enabled: true
-smtp_server: smtp.gmail.com
+# SMTP server address
+smtp_server: smtp.example.com
+# SMTP server port
 smtp_port: 587
-smtp_user: your-email@gmail.com
-smtp_pass: your-app-password
-email_from: your-email@gmail.com
-email_to: admin@yourcompany.com
-smtp_security: starttls # options: none, starttls, ssl
-
-# Disk Monitoring Configuration
-threshold_percent: 10.0 # Alert when disk space drops below 10%
-send_mail_on_unknown_status: false # Send email if SMART status is unknown
-
-# Health Check Configuration
-health_check_enabled: true # Enable/disable disk health checks (default: true)
+# SMTP username (leave blank if not required)
+smtp_user: user@example.com
+# SMTP password (leave blank if not required)
+smtp_pass: password
+# Sender email address
+email_from: admin@example.com
+# Recipient email address
+email_to: alerts@example.com
+# SMTP security: none, starttls, or ssl
+smtp_security: starttls
+# Alert if free space is below this percent (1.0-100.0)
+threshold_percent: 10.0
+# Send mail if SMART status is unknown
+send_mail_on_unknown_status: false
+# List of disks to exclude (Linux: e.g. ["sda", "nvme0n1"]; Windows: e.g. ["C:", "D:"]). Empty values are ignored.
+excluded_disks: [""]
+# Enable disk health checks (disable to only check free space)
+health_check_enabled: true
+# Enable SMART-based alerts (disable to ignore SMART failures)
+smart_enabled: true
+# Optional: friendly name for this device in reports
+friendly_name: "Example device"
 ```
 
-### Configuration Options
+### Configuration Options (Explained)
 
-- **mail_enabled**: Set to `false` for test mode (no emails sent)
-- **smtp_server**: Your SMTP server address
-- **smtp_port**: SMTP port (587 for STARTTLS, 465 for SSL, 25 for none)
-- **smtp_user/smtp_pass**: Authentication credentials (can be empty for open relays)
-- **email_from**: Sender email address
-- **email_to**: Recipient email address
-- **smtp_security**: Security method (none, starttls, ssl)
-- **threshold_percent**: Disk space threshold (default: 10.0%)
-- **send_mail_on_unknown_status**: Send email if SMART status is unknown (default: false)
-- **health_check_enabled**: Enable/disable disk health checks (default: true)
+- **mail_enabled**: Enables or disables email notifications for disk alerts.
+- **smtp_server / smtp_port**: The SMTP server and port used to send alert emails.
+- **smtp_user / smtp_pass**: Credentials for SMTP authentication (leave blank if not required).
+- **email_from / email_to**: The sender and recipient email addresses for alerts.
+- **smtp_security**: Security protocol for SMTP (`none`, `starttls`, or `ssl`).
+- **threshold_percent**: The minimum free disk space percentage before an alert is sent (1.0–100.0).
+- **send_mail_on_unknown_status**: If `true`, sends an alert even if disk health (SMART) status is unknown.
+- **excluded_disks**: List of disks to exclude from monitoring (by device name or drive letter).
+- **health_check_enabled**: Enables or disables disk health checks (if `false`, only free space is monitored).
+- **smart_enabled**: Enables or disables SMART-based alerts (if `false`, SMART failures are ignored).
+- **friendly_name**: (Optional) Custom name for this system in alert emails (useful for identifying multiple systems).
+
+**Tip:** All options are documented in the example config. Only change what you need for your environment.
 
 ## Automation Examples
 
