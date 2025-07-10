@@ -475,7 +475,9 @@ body.push_str(&format!(
     
     let use_auth = !(cfg.smtp_user.trim().is_empty() && cfg.smtp_pass.trim().is_empty());
     let security = cfg.smtp_security.as_deref().unwrap_or("starttls").to_lowercase();
-    
+    if debug {
+        println!("[DEBUG] smtp_security from config: {:?}", cfg.smtp_security);
+    }
     let mailer = match security.as_str() {
         "none" => {
             let mut builder = SmtpTransport::builder_dangerous(&cfg.smtp_server).port(cfg.smtp_port);
@@ -567,7 +569,7 @@ fn main() {
 
     // Show loading message
     println!("{}", "Loading information, please wait...".yellow().italic());
-
+    
     // Get all monitored disks
     let disks = get_monitored_disks(&cfg, debug);
     
@@ -770,10 +772,10 @@ fn main() {
                 println!("\n{} (above {:.1}% threshold, but health status is unknown for one or more disks).", 
                          "All disks are above threshold".yellow().bold(), 
                          threshold);
-            } else {
-                println!("\n{} (above {:.1}% threshold and SMART status OK).", 
-                         "All disks are healthy".green().bold(), 
-                         threshold);
+        } else {
+            println!("\n{} (above {:.1}% threshold and SMART status OK).", 
+                     "All disks are healthy".green().bold(), 
+                     threshold);
             }
         }
     }
