@@ -9,9 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Configuration File Improvements**: The example config and documentation have been updated for clarity and accuracy. All options are now clearly documented for system administrators.
-- **Removed Debug Key**: The `debug` key is no longer present in the config or documentation. Debug output is now controlled internally.
 - **Documentation**: The README and config example now provide clear, end-user-focused explanations for each configuration option.
-- **Release Notes**: Added release notes for v0.2.1 in RELEASE.md.
 
 ### Fixed
 - Minor documentation and config validation improvements for better user experience.
