@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-07-10
+
+### Changed
+- **Configuration File Improvements**: The example config and documentation have been updated for clarity and accuracy. All options are now clearly documented for system administrators.
+- **Documentation**: The README and config example now provide clear, end-user-focused explanations for each configuration option.
+
+### Fixed
+- Minor documentation and config validation improvements for better user experience.
 
 ## [0.2.0] - 2025-07-05
 
@@ -15,14 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cross-Platform SMART Support**: Consistent SMART status monitoring across Windows and Linux platforms
 - **Smartmontools**: Uses smartctl if available, falls back to kernel interfaces (dmesg, fsck, /proc/diskstats) or WMI
 
-
 ### Changed
 - **Windows SMART Implementation**: Replaced placeholder with robust WMI-based SMART status detection
 - **Linux SMART Implementation**: Replaced placeholder with hybrid smartctl + kernel-based SMART status detection
 - **Drive Mapping**: Accurate mapping between drive letters (C:, D:, etc.) and physical drives
 - **Mount Point Mapping**: Accurate mapping between mount points and device names on Linux
 - **Documentation**: Updated README to reflect hybrid SMART status support approach
-
 
 ### Technical Improvements
 - **WMI Associations**: Uses proper WMI associations (Win32_LogicalDiskToPartition, Win32_DiskDriveToDiskPartition)
