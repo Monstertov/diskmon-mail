@@ -26,5 +26,7 @@ Cargo.lock
 install
 development.md
 publish.sh
+backup.sh
 releases/
 RELEASE.md
+TODO.md
