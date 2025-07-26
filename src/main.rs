@@ -625,11 +625,7 @@ body.push_str(&format!(
 
 #[tokio::main]
 async fn main() {
-    // Initialize logging
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
-        .init();
-    // Load and validate configuration
+    // Load and validate configuration first to check debug setting
     let cfg = match config::load_config(config::CONFIG_PATH) {
         Ok(config) => config,
         Err(e) => {
@@ -638,14 +634,19 @@ async fn main() {
         }
     };
 
-    // Get debug setting and enable debug logging if requested
+    // Get debug setting and initialize logging with appropriate level
     let debug = cfg.debug.unwrap_or(false);
+    let log_level = if debug {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+    
+    env_logger::Builder::from_default_env()
+        .filter_level(log_level)
+        .init();
+
     if debug {
-        // Reinitialize logger with debug level if debug mode is enabled
-        env_logger::Builder::from_default_env()
-            .filter_level(log::LevelFilter::Debug)
-            .init();
-        
         debug!("Debug mode enabled");
         debug!("Loaded config: {:#?}", cfg);
     }
