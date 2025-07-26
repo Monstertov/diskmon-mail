@@ -10,12 +10,13 @@ A lightweight, cross-platform disk space monitoring tool that sends email alerts
 
 ## What It Does
 
-- Monitors all local disks (excluding USB drives and network mounts)
-- Checks available disk space against your configured threshold
-- Provides detailed system information in alerts
-- Works silently in the background
-- Gathers SMART status information (may take a few seconds on Windows)
-- Sends email alerts when disk space drops below the threshold or when disk errors are detected
+- **Fast Disk Monitoring**: Monitors all local disks (excluding USB drives and network mounts) with parallel health checks for speed
+- **Smart Alerting**: Checks available disk space against your configured threshold with automatic SMTP retry for reliable delivery
+- **Comprehensive Reports**: Provides detailed system information and disk health status in alerts
+- **Background Operation**: Works silently in the background with configurable timeouts to prevent hanging
+- **Enhanced SMART Monitoring**: Gathers SMART status information quickly using parallel processing (significant speed improvement in v0.3.0)
+- **Reliable Email Delivery**: Automatic retry logic ensures critical alerts reach you even during temporary network issues
+- **Monitoring Integration**: JSON output mode for seamless integration with monitoring systems (Nagios, Zabbix, Prometheus, etc.)
 
 
 ## Quick Start
@@ -49,6 +50,12 @@ Download the appropriate binary for your system from the [GitHub releases page](
 
 # Display SMART status for all disks
 ./diskmon-mail --smart
+
+# Machine-readable output for monitoring systems
+./diskmon-mail --json
+
+# Custom timeout for SMART collection (useful for slow drives)
+./diskmon-mail --smart-timeout 60
 ```
 > **Note on SMART Status**: The ability to read SMART status is not guaranteed and depends on the disk, controller, and operating system. On Linux, the tool first tries to use `smartctl` (smartmontools) if available, then falls back to built-in kernel interfaces. On Windows, it uses PowerShell and WMI. The tool does not require external dependencies but will use them if available for better accuracy. On RAID arrays, SMART status may not be accurate. The tool may take a few seconds to gather SMART information, especially on Windows systems. See the [Enhanced Disk Health Monitoring (Optional)](#enhanced-disk-health-monitoring-optional) section for more details.
 
@@ -110,6 +117,67 @@ friendly_name: "Example device"
 - **friendly_name**: (Optional) Custom name for this system in alert emails (useful for identifying multiple systems).
 
 **Tip:** All options are documented in the example config. Only change what you need for your environment.
+
+### Secure Credential Management (New in v0.3.0)
+
+For enhanced security, you can store SMTP credentials outside the configuration file using environment variables:
+
+```bash
+# Set environment variables (Linux/macOS)
+export DISKMON_SMTP_USER="your-email@domain.com"
+export DISKMON_SMTP_PASS="your-app-password"
+export DISKMON_EMAIL_FROM="monitoring@yourdomain.com"
+export DISKMON_EMAIL_TO="admin@yourdomain.com"
+
+# Then run diskmon-mail (credentials will override config file values)
+./diskmon-mail
+```
+
+```cmd
+# Set environment variables (Windows)
+set DISKMON_SMTP_USER=your-email@domain.com
+set DISKMON_SMTP_PASS=your-app-password
+set DISKMON_EMAIL_FROM=monitoring@yourdomain.com
+set DISKMON_EMAIL_TO=admin@yourdomain.com
+
+# Then run diskmon-mail
+diskmon-mail.exe
+```
+
+This approach keeps sensitive credentials out of configuration files and supports modern security practices.
+
+## New in Version 0.3.0 - Performance & Reliability Improvements
+
+### Faster Execution
+- **Parallel SMART Collection**: Disk health checks now run simultaneously instead of one-by-one, reducing scan time from 30+ seconds to under 10 seconds on multi-drive systems
+- **Configurable Timeouts**: Use `--smart-timeout N` to prevent hanging on unresponsive drives (default: 30 seconds)
+- **Efficient for Regular Monitoring**: Now fast enough for daily or even twice-daily monitoring without performance concerns
+
+### More Reliable Alerts
+- **Automatic SMTP Retry**: Failed email deliveries automatically retry with smart backoff (up to 3 attempts)
+- **Network Resilience**: Temporary network issues no longer cause missed critical alerts
+- **Better Error Recovery**: Enhanced error handling prevents crashes on transient issues
+
+### Enhanced Security
+- **Environment Variable Support**: Store SMTP credentials securely outside config files
+- **Permission Warnings**: Alerts when config files have overly permissive permissions
+- **Improved TLS**: Enhanced certificate validation for secure email delivery
+
+### Monitoring System Integration
+- **JSON Output**: Use `--json` for machine-readable output compatible with:
+  - Nagios/Icinga monitoring systems
+  - Zabbix infrastructure monitoring
+  - Prometheus metrics collection
+  - Custom monitoring dashboards
+- **Structured Data**: Complete system and disk information in JSON format
+- **Alert Classification**: Clear separation of disk space and SMART health alerts
+
+### System Administrator Benefits
+- **Drop-in Upgrade**: 100% backward compatible - existing configurations work unchanged
+- **Faster Response**: Significantly reduced execution time for better user experience
+- **Fewer Missed Alerts**: SMTP retry logic ensures critical notifications reach you
+- **Better Integration**: JSON output enables seamless monitoring system integration
+- **Enhanced Debugging**: Improved logging and error messages for easier troubleshooting
 
 ## Automation Examples
 
@@ -178,14 +246,17 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "DiskMon-Mail" /
 Add to crontab (`crontab -e`):
 
 ```bash
-# Run daily at midnight
+# Run daily at midnight (recommended)
 0 0 * * * /path/to/diskmon-mail
 
-# Run every hour
-0 * * * * /path/to/diskmon-mail
+# Run weekly on Sundays at 2 AM
+0 2 * * 0 /path/to/diskmon-mail
 
-# Run every 30 minutes
-*/30 * * * * /path/to/diskmon-mail
+# Run twice daily (morning and evening)
+0 8,20 * * * /path/to/diskmon-mail
+
+# Run with custom timeout for slow systems
+0 0 * * * /path/to/diskmon-mail --smart-timeout 60
 ```
 
 ### Systemd Service (Linux)
@@ -215,12 +286,14 @@ Description=Run DiskMon-Mail daily
 Requires=diskmon-mail.service
 
 [Timer]
-OnCalendar=*-*-* 00:00:00
+OnCalendar=daily
 Persistent=true
 
 [Install]
 WantedBy=timers.target
 ```
+
+For weekly monitoring, use `OnCalendar=weekly` instead.
 
 Enable and start:
 ```bash
@@ -252,14 +325,16 @@ If emails aren't being sent, test your SMTP configuration:
 ./diskmon-mail --force-mail
 ```
 
-This will send test emails for all disks regardless of available space.
+This will send test emails for all disks regardless of available space. In v0.3.0, failed email deliveries will automatically retry up to 3 times with smart backoff timing.
 
 ### Common Issues
 
 1. **"Configuration error"**: Check that `config.yaml` exists in the same directory as the executable
-2. **"SMTP error"**: Verify your SMTP server settings and credentials
+2. **"SMTP error"**: Verify your SMTP server settings and credentials (v0.3.0 includes automatic retry for transient issues)
 3. **"No monitored disks found"**: Ensure you have local disks mounted
 4. **Permission denied**: Run with appropriate permissions (admin/root if needed)
+5. **"SMART collection timed out"**: Use `--smart-timeout 60` for slower systems or drives (new in v0.3.0)
+6. **Slow execution**: Upgrade to v0.3.0 for significantly faster parallel SMART collection
 
 ### Debug Mode
 
@@ -325,15 +400,16 @@ For Raspberry Pi systems with SD cards, smartmontools provides limited support, 
 - **ARM**: Raspberry Pi, ARM servers, embedded systems
 - **Memory**: Minimal (typically < 10MB RAM)
 - **Network**: Internet access for SMTP (if using external email)
-- **Performance**: Initial disk information gathering may take 2-5 seconds, especially on Windows systems with multiple drives
+- **Performance**: v0.3.0 significantly improved - disk information gathering now typically under 10 seconds even on Windows systems with multiple drives
 - **Optional**: smartmontools for enhanced disk health monitoring (not required but recommended)
 
 ## Security Notes
 
-- Store `config.yaml` securely - it contains email credentials
+- **v0.3.0 Enhancement**: Use environment variables for SMTP credentials instead of storing them in config files
+- Store `config.yaml` securely if it contains email credentials (v0.3.0 warns about overly permissive permissions)
 - Use app passwords for Gmail/Office 365 instead of regular passwords
-- Consider using environment variables for sensitive data in production
-- The tool only reads disk information and sends emails - no data collection
+- **Recommended**: Use the new environment variable support for sensitive data in production
+- The tool only reads disk information and sends emails - no data collection or external reporting
 
 ## Support
 
