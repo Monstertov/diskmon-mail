@@ -6,6 +6,7 @@
 *.swo
 *.bak
 *.tmp
+CLAUDE.md
 
 # OS
 .DS_Store
