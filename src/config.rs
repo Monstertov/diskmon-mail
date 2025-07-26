@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::env;
 
 pub const CONFIG_PATH: &str = "config.yaml";
 
@@ -28,6 +29,21 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, String> {
         return Err(format!("Configuration file not found: {}", path.as_ref().display()));
     }
     
+    // Check file permissions on Unix systems
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&path) {
+            let permissions = metadata.permissions();
+            let mode = permissions.mode();
+            // Check if file is readable by group or others (world-readable)
+            if mode & 0o044 != 0 {
+                eprintln!("[SECURITY WARNING] Configuration file {} has overly permissive permissions (readable by group/others). Consider: chmod 600 {}", 
+                    path.as_ref().display(), path.as_ref().display());
+            }
+        }
+    }
+    
     // Read config file
     let data = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read config file: {e}"))?;
@@ -39,7 +55,39 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, String> {
     // Validate required fields
     validate_config(&config)?;
     
+    // Apply environment variable overrides for sensitive data
+    let config = apply_env_overrides(config);
+    
     Ok(config)
+}
+
+fn apply_env_overrides(mut config: Config) -> Config {
+    // Override SMTP credentials from environment variables if available
+    if let Ok(smtp_user) = env::var("DISKMON_SMTP_USER") {
+        if !smtp_user.trim().is_empty() {
+            config.smtp_user = smtp_user;
+        }
+    }
+    
+    if let Ok(smtp_pass) = env::var("DISKMON_SMTP_PASS") {
+        if !smtp_pass.trim().is_empty() {
+            config.smtp_pass = smtp_pass;
+        }
+    }
+    
+    if let Ok(email_from) = env::var("DISKMON_EMAIL_FROM") {
+        if !email_from.trim().is_empty() {
+            config.email_from = email_from;
+        }
+    }
+    
+    if let Ok(email_to) = env::var("DISKMON_EMAIL_TO") {
+        if !email_to.trim().is_empty() {
+            config.email_to = email_to;
+        }
+    }
+    
+    config
 }
 
 fn validate_config(config: &Config) -> Result<(), String> {

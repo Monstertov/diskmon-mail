@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-07-26
+
+### Performance Improvements
+- **Faster SMART Collection**: Disk health checks now run in parallel instead of sequentially, reducing scan time from 30+ seconds to under 10 seconds on systems with multiple drives
+- **Configurable Timeouts**: Added `--smart-timeout` option to prevent hanging on unresponsive drives (default: 30 seconds)
+- **Improved Responsiveness**: System administrators will notice significantly faster execution, especially on Windows systems with multiple drives
+
+### Reliability Enhancements
+- **SMTP Retry Logic**: Email delivery now automatically retries failed attempts with smart backoff (up to 3 attempts), reducing missed alerts due to temporary network issues
+- **Better Error Recovery**: Enhanced error handling prevents the tool from crashing on transient issues
+- **Graceful Timeouts**: No more infinite waits when drives become unresponsive
+
+### Security & Configuration
+- **Environment Variable Support**: SMTP credentials can now be stored securely outside config files using environment variables:
+  - `DISKMON_SMTP_USER` - SMTP username
+  - `DISKMON_SMTP_PASS` - SMTP password  
+  - `DISKMON_EMAIL_FROM` - Sender email
+  - `DISKMON_EMAIL_TO` - Recipient email
+- **Configuration Security Check**: Warns system administrators when config.yaml has overly permissive file permissions on Unix systems
+- **Enhanced TLS Validation**: Improved certificate validation for secure SMTP connections
+
+### Monitoring Integration
+- **JSON Output Mode**: New `--json` flag provides machine-readable output for integration with monitoring systems (Nagios, Zabbix, Prometheus, etc.)
+- **Structured Logging**: Better debug information and logging for troubleshooting
+- **Alert Details**: JSON output includes comprehensive disk status, system information, and active alerts
+
+### Command Line Improvements
+- **New Options**:
+  - `--json` - Machine-readable output for monitoring systems
+  - `--smart-timeout N` - Set SMART collection timeout in seconds (default: 30)
+- **Better Debug Output**: Enhanced debugging information when debug mode is enabled
+- **Improved Error Messages**: Clearer error reporting for configuration and runtime issues
+
+### System Administrator Benefits
+- **Faster Execution**: Significantly reduced execution time, especially beneficial for frequent monitoring
+- **More Reliable Alerts**: SMTP retry logic ensures critical alerts reach administrators even during network hiccups  
+- **Better Security**: Ability to externalize credentials from configuration files
+- **Monitoring Integration**: Easy integration with existing monitoring infrastructure via JSON output
+- **Improved Diagnostics**: Better logging and debug information for troubleshooting issues
+
+### Backward Compatibility
+- **100% Compatible**: All existing configurations continue to work without modification
+- **No Breaking Changes**: All new features are opt-in via command-line flags or environment variables
+- **Seamless Upgrade**: Drop-in replacement for previous versions
+
 ## [0.2.1] - 2025-07-10
 
 ### Changed

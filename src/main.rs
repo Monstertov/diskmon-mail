@@ -4,7 +4,11 @@
 use lettre::{Message, SmtpTransport, Transport, transport::smtp::authentication::Credentials, transport::smtp::client::Tls, transport::smtp::client::TlsParameters};
 use clap::Parser;
 use colored::*;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use tokio::time::timeout;
+use futures::future::join_all;
+use backoff::{ExponentialBackoff, backoff::Backoff};
+use log::{info, warn, error, debug};
 
 mod config;
 mod system;
@@ -26,9 +30,15 @@ struct Cli {
     /// Display SMART status for all detected disks
     #[arg(long)]
     smart: bool,
+    /// Output results in JSON format
+    #[arg(long)]
+    json: bool,
+    /// SMART collection timeout in seconds (default: 30)
+    #[arg(long, default_value = "30")]
+    smart_timeout: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 struct DiskInfo {
     mount_point: String,
     display_name: String, // Drive letter for Windows, mount point for Unix
@@ -89,9 +99,9 @@ fn init_colors() {
     }
 }
 
-fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
+async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u64) -> Vec<DiskInfo> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
-    let mut monitored_disks = Vec::new();
+    let mut disk_candidates = Vec::new();
     let mut excluded_not_found = Vec::new();
     let excluded = cfg.excluded_disks.clone().unwrap_or_default();
     let mut found_excluded = vec![false; excluded.len()];
@@ -100,9 +110,9 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
     let health_check_enabled = cfg.health_check_enabled.unwrap_or(true);
 
     if debug {
-        println!("[DEBUG] sysinfo found {} disks:", disks.list().len());
+        debug!("sysinfo found {} disks:", disks.list().len());
         for (i, disk) in disks.list().iter().enumerate() {
-            println!("[DEBUG] Disk {}: mount_point={:?}, name={:?}, fs={:?}, total={} available={}",
+            debug!("Disk {}: mount_point={:?}, name={:?}, fs={:?}, total={} available={}",
                 i,
                 disk.mount_point(),
                 disk.name(),
@@ -170,72 +180,139 @@ fn get_monitored_disks(cfg: &config::Config, debug: bool) -> Vec<DiskInfo> {
             })
         };
         if debug && is_excluded {
-            println!("[DEBUG] Excluding disk: {} (display_name: {}, dev: {:?})", mount_point, display_name, disk.name());
+            debug!("Excluding disk: {} (display_name: {}, dev: {:?})", mount_point, display_name, disk.name());
         }
         if is_excluded { continue; }
 
         let file_system = disk.file_system().to_str().unwrap_or("Unknown").to_string();
 
-        // Only perform health checks if enabled
-        let (smart_status, serial_number, brand, model, is_raid, power_on_hours, reallocated_sectors, temperature, pending_sectors, uncorrectable_sectors, health_method) = if health_check_enabled {
-            // For Windows, pass the mount point (drive letter) instead of disk name
-            let smart_input = if cfg!(windows) {
-                &mount_point
-            } else {
-                disk.name().to_str().unwrap_or("")
-            };
-            system::get_smart_status(smart_input, debug)
-        } else {
-            (None, None, None, None, false, None, None, None, None, None, "disabled".to_string())
-        };
-
-        monitored_disks.push(DiskInfo {
-            mount_point,
-            display_name,
-            free_space_percent,
-            total_space: total,
-            available_space: available,
-            file_system,
-            smart_status,
-            serial_number,
-            brand,
-            model,
-            is_raid,
-            power_on_hours,
-            reallocated_sectors,
-            temperature,
-            pending_sectors,
-            uncorrectable_sectors,
-            health_method,
-        });
+        // Store disk information for parallel SMART collection
+        disk_candidates.push((mount_point, display_name, free_space_percent, total, available, file_system, disk.name().to_str().unwrap_or("").to_string()));
     }
+
     // Collect excluded disks that were not found
     for (i, found) in found_excluded.iter().enumerate() {
         if !*found {
             excluded_not_found.push(excluded[i].clone());
         }
     }
-    // Store not found for reporting
     if !excluded_not_found.is_empty() {
-        println!("[WARNING] The following excluded_disks were not found: {}", excluded_not_found.join(", "));
+        warn!("The following excluded_disks were not found: {}", excluded_not_found.join(", "));
     }
-    if debug {
-        println!("[DEBUG] Final monitored disks:");
-        for (i, disk) in monitored_disks.iter().enumerate() {
-            println!("[DEBUG] Monitored Disk {}: mount_point={}, display_name={}, fs={}, total={}, available={}",
-                i,
-                disk.mount_point,
-                disk.display_name,
-                disk.file_system,
-                disk.total_space,
-                disk.available_space
-            );
+
+    // Parallel SMART status collection with timeout
+    if health_check_enabled {
+        let smart_futures = disk_candidates.iter().map(|(mount_point, _, _, _, _, _, disk_name)| {
+            let smart_input = if cfg!(windows) {
+                mount_point.clone()
+            } else {
+                disk_name.clone()
+            };
+            let timeout_duration = Duration::from_secs(smart_timeout);
+            
+            async move {
+                let smart_input_clone = smart_input.clone();
+                let smart_input_clone2 = smart_input.clone();
+                match timeout(timeout_duration, tokio::task::spawn_blocking(move || {
+                    system::get_smart_status(&smart_input, debug)
+                })).await {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(_)) => {
+                        warn!("SMART collection task panicked for disk: {}", smart_input_clone);
+                        (None, None, None, None, false, None, None, None, None, None, "error".to_string())
+                    },
+                    Err(_) => {
+                        warn!("SMART collection timed out for disk: {} ({}s)", smart_input_clone2, smart_timeout);
+                        (None, None, None, None, false, None, None, None, None, None, "timeout".to_string())
+                    }
+                }
+            }
+        });
+
+        let smart_results = join_all(smart_futures).await;
+
+        // Combine disk info with SMART results
+        let final_disks: Vec<DiskInfo> = disk_candidates.into_iter().zip(smart_results.into_iter())
+            .map(|((mount_point, display_name, free_space_percent, total, available, file_system, _), (smart_status, serial_number, brand, model, is_raid, power_on_hours, reallocated_sectors, temperature, pending_sectors, uncorrectable_sectors, health_method))| {
+                DiskInfo {
+                    mount_point,
+                    display_name,
+                    free_space_percent,
+                    total_space: total,
+                    available_space: available,
+                    file_system,
+                    smart_status,
+                    serial_number,
+                    brand,
+                    model,
+                    is_raid,
+                    power_on_hours,
+                    reallocated_sectors,
+                    temperature,
+                    pending_sectors,
+                    uncorrectable_sectors,
+                    health_method,
+                }
+            }).collect();
+
+        if debug {
+            debug!("Final monitored disks:");
+            for (i, disk) in final_disks.iter().enumerate() {
+                debug!("Monitored Disk {}: mount_point={}, display_name={}, fs={}, total={}, available={}",
+                    i,
+                    disk.mount_point,
+                    disk.display_name,
+                    disk.file_system,
+                    disk.total_space,
+                    disk.available_space
+                );
+            }
         }
+
+        final_disks
+    } else {
+        // Health checks disabled - convert to final format
+        let final_disks: Vec<DiskInfo> = disk_candidates.into_iter().map(|(mount_point, display_name, free_space_percent, total, available, file_system, _)| {
+            DiskInfo {
+                mount_point,
+                display_name,
+                free_space_percent,
+                total_space: total,
+                available_space: available,
+                file_system,
+                smart_status: None,
+                serial_number: None,
+                brand: None,
+                model: None,
+                is_raid: false,
+                power_on_hours: None,
+                reallocated_sectors: None,
+                temperature: None,
+                pending_sectors: None,
+                uncorrectable_sectors: None,
+                health_method: "disabled".to_string(),
+            }
+        }).collect();
+
+        if debug {
+            debug!("Final monitored disks (health checks disabled):");
+            for (i, disk) in final_disks.iter().enumerate() {
+                debug!("Monitored Disk {}: mount_point={}, display_name={}, fs={}, total={}, available={}",
+                    i,
+                    disk.mount_point,
+                    disk.display_name,
+                    disk.file_system,
+                    disk.total_space,
+                    disk.available_space
+                );
+            }
+        }
+
+        final_disks
     }
-    monitored_disks
 }
 
-fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_info: &system::SystemInfo, forced: bool, debug: bool) -> Result<(), String> {
+async fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_info: &system::SystemInfo, forced: bool, debug: bool) -> Result<(), String> {
     if !cfg.mail_enabled {
         println!("{} System report: {} disk(s) monitored. Mail not sent.", 
                  "[TEST MODE]".yellow().bold(), 
@@ -509,9 +586,35 @@ body.push_str(&format!(
         }
     };
     
-    // Send email and provide detailed error information
-    mailer.send(&email)
-        .map_err(|e| format!("SMTP error: {e}"))?;
+    // Send email with retry logic
+    let mut backoff = ExponentialBackoff::default();
+    backoff.max_elapsed_time = Some(Duration::from_secs(300)); // 5 minutes max
+    backoff.initial_interval = Duration::from_secs(1);
+    backoff.max_interval = Duration::from_secs(30);
+    
+    let mut attempt = 1;
+    let max_attempts = 3;
+    
+    loop {
+        match mailer.send(&email) {
+            Ok(_) => break,
+            Err(e) => {
+                error!("SMTP attempt {} failed: {}", attempt, e);
+                
+                if attempt >= max_attempts {
+                    return Err(format!("SMTP error after {} attempts: {}", max_attempts, e));
+                }
+                
+                if let Some(delay) = backoff.next_backoff() {
+                    warn!("Retrying SMTP in {:?}...", delay);
+                    tokio::time::sleep(delay).await;
+                    attempt += 1;
+                } else {
+                    return Err(format!("SMTP error: {}", e));
+                }
+            }
+        }
+    }
     
     println!("{} System report sent for {} disk(s){}", 
              "SUCCESS".green().bold(), 
@@ -520,7 +623,12 @@ body.push_str(&format!(
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
+    // Initialize logging
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
     // Load and validate configuration
     let cfg = match config::load_config(config::CONFIG_PATH) {
         Ok(config) => config,
@@ -530,11 +638,16 @@ fn main() {
         }
     };
 
-    // Get debug setting and print debug info immediately (Linux and Windows)
+    // Get debug setting and enable debug logging if requested
     let debug = cfg.debug.unwrap_or(false);
     if debug {
-        println!("[DEBUG] Debug mode enabled");
-        println!("[DEBUG] Loaded config: {:#?}", cfg);
+        // Reinitialize logger with debug level if debug mode is enabled
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Debug)
+            .init();
+        
+        debug!("Debug mode enabled");
+        debug!("Loaded config: {:#?}", cfg);
     }
 
     // Initialize color support based on terminal capabilities
@@ -550,15 +663,15 @@ fn main() {
         std::process::Command::new("smartctl").arg("--version").output().is_ok()
     };
     if smartctl_available {
-        println!("smartmontools detected - using smartctl for enhanced disk health monitoring");
+        info!("smartmontools detected - using smartctl for enhanced disk health monitoring");
     } else {
-        println!("smartmontools not detected - using fallback methods");
+        info!("smartmontools not detected - using fallback methods");
     }
 
     // Get system information
     let system_info = system::get_system_info();
     if debug {
-        println!("[DEBUG] System info: {:#?}", system_info);
+        debug!("System info: {:#?}", system_info);
     }
     println!("{} {} {} {} ({})", 
              "System:".blue().bold(), 
@@ -571,7 +684,7 @@ fn main() {
     println!("{}", "Loading information, please wait...".yellow().italic());
     
     // Get all monitored disks
-    let disks = get_monitored_disks(&cfg, debug);
+    let disks = get_monitored_disks(&cfg, debug, cli.smart_timeout).await;
     
     if disks.is_empty() {
         eprintln!("{} This could indicate a system error or all disks are removable/network drives.", 
@@ -673,6 +786,47 @@ fn main() {
         println!("{}", "WARNING: RAID device(s) detected. Health information may be unavailable or unreliable. This tool should NOT be used for health monitoring tasks on RAID systems.".red().bold());
     }
 
+    if cli.json {
+        // JSON output mode
+        #[derive(serde::Serialize)]
+        struct JsonOutput {
+            system_info: system::SystemInfo,
+            disks: Vec<DiskInfo>,
+            threshold_percent: f64,
+            smartctl_available: bool,
+            alerts: Vec<String>,
+        }
+        
+        let threshold = cfg.threshold_percent.unwrap_or(10.0);
+        let mut alerts = Vec::new();
+        
+        for disk in &disks {
+            if disk.free_space_percent < threshold {
+                alerts.push(format!("{}: Low space ({:.2}%)", disk.display_name, disk.free_space_percent));
+            }
+            if disk.smart_status.as_deref().unwrap_or("OK").to_uppercase() != "OK" {
+                alerts.push(format!("{}: SMART failure ({})", disk.display_name, disk.smart_status.as_deref().unwrap_or("N/A")));
+            }
+        }
+        
+        let output = JsonOutput {
+            system_info,
+            disks,
+            threshold_percent: threshold,
+            smartctl_available,
+            alerts,
+        };
+        
+        match serde_json::to_string_pretty(&output) {
+            Ok(json) => println!("{}", json),
+            Err(e) => {
+                error!("Failed to serialize JSON output: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     if cli.smart {
         println!("\n{}", "SMART Status Details:".blue().bold());
         for disk in &disks {
@@ -713,7 +867,7 @@ fn main() {
     if cli.force_mail {
         // Force send comprehensive system report for all disks
         println!("\n{}", "Forced mail mode: Sending comprehensive system report...".yellow().bold());
-        if let Err(e) = send_system_report(&cfg, &disks, &system_info, true, debug) {
+        if let Err(e) = send_system_report(&cfg, &disks, &system_info, true, debug).await {
             eprintln!("{} {}", "ERROR Failed to send system report:".red().bold(), e);
             errors_occurred = true;
         } else {
@@ -760,7 +914,7 @@ fn main() {
             }
             
             // Send one comprehensive report with all problem disks
-            if let Err(e) = send_system_report(&cfg, &disks, &system_info, false, debug) {
+            if let Err(e) = send_system_report(&cfg, &disks, &system_info, false, debug).await {
                 eprintln!("{} {}", "ERROR Failed to send system report:".red().bold(), e);
                 errors_occurred = true;
             } else {

@@ -1,7 +1,7 @@
 use hostname::get as get_hostname;
 use sysinfo::System;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SystemInfo {
     pub os_name: String,
     pub os_version: String,
