@@ -62,7 +62,7 @@ struct DiskInfo {
 // Check if terminal supports colors
 fn supports_colors() -> bool {
     // Check if we're in a terminal that supports colors
-    if let Some(_term) = std::env::var("TERM").ok() {
+    if std::env::var("TERM").is_ok() {
         // Most Unix terminals support colors
         if cfg!(unix) {
             return true;
@@ -103,7 +103,7 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
     let disks = sysinfo::Disks::new_with_refreshed_list();
     let mut disk_candidates = Vec::new();
     let mut excluded_not_found = Vec::new();
-    let excluded = cfg.excluded_disks.clone().unwrap_or_default();
+    let excluded: &[String] = cfg.excluded_disks.as_deref().unwrap_or_default();
     let mut found_excluded = vec![false; excluded.len()];
     
     // Check if health checks are enabled (default to true if not specified)
@@ -150,7 +150,10 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
 
         let display_name = if cfg!(windows) {
             if mount_point.len() >= 2 && mount_point.chars().nth(1) == Some(':') {
-                format!("Drive {}", mount_point.chars().nth(0).unwrap().to_uppercase())
+                match mount_point.chars().next() {
+                    Some(c) => format!("Drive {}", c.to_uppercase()),
+                    None => mount_point.clone(),
+                }
             } else {
                 mount_point.clone()
             }
@@ -212,18 +215,17 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
             
             async move {
                 let smart_input_clone = smart_input.clone();
-                let smart_input_clone2 = smart_input.clone();
                 match timeout(timeout_duration, tokio::task::spawn_blocking(move || {
                     system::get_smart_status(&smart_input, debug)
                 })).await {
                     Ok(Ok(result)) => result,
                     Ok(Err(_)) => {
                         warn!("SMART collection task panicked for disk: {}", smart_input_clone);
-                        (None, None, None, None, false, None, None, None, None, None, "error".to_string())
+                        system::SmartInfo::unknown("error")
                     },
                     Err(_) => {
-                        warn!("SMART collection timed out for disk: {} ({}s)", smart_input_clone2, smart_timeout);
-                        (None, None, None, None, false, None, None, None, None, None, "timeout".to_string())
+                        warn!("SMART collection timed out for disk: {} ({}s)", smart_input_clone, smart_timeout);
+                        system::SmartInfo::unknown("timeout")
                     }
                 }
             }
@@ -233,7 +235,7 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
 
         // Combine disk info with SMART results
         let final_disks: Vec<DiskInfo> = disk_candidates.into_iter().zip(smart_results.into_iter())
-            .map(|((mount_point, display_name, free_space_percent, total, available, file_system, _), (smart_status, serial_number, brand, model, is_raid, power_on_hours, reallocated_sectors, temperature, pending_sectors, uncorrectable_sectors, health_method))| {
+            .map(|((mount_point, display_name, free_space_percent, total, available, file_system, _), info)| {
                 DiskInfo {
                     mount_point,
                     display_name,
@@ -241,17 +243,17 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
                     total_space: total,
                     available_space: available,
                     file_system,
-                    smart_status,
-                    serial_number,
-                    brand,
-                    model,
-                    is_raid,
-                    power_on_hours,
-                    reallocated_sectors,
-                    temperature,
-                    pending_sectors,
-                    uncorrectable_sectors,
-                    health_method,
+                    smart_status: info.smart_status,
+                    serial_number: info.serial_number,
+                    brand: info.brand,
+                    model: info.model,
+                    is_raid: info.is_raid,
+                    power_on_hours: info.power_on_hours,
+                    reallocated_sectors: info.reallocated_sectors,
+                    temperature: info.temperature,
+                    pending_sectors: info.pending_sectors,
+                    uncorrectable_sectors: info.uncorrectable_sectors,
+                    health_method: info.health_method,
                 }
             }).collect();
 
@@ -312,7 +314,7 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
     }
 }
 
-async fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_info: &system::SystemInfo, forced: bool, debug: bool) -> Result<(), String> {
+async fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_info: &system::SystemInfo, forced: bool, debug: bool, smartctl_available: bool) -> Result<(), String> {
     if !cfg.mail_enabled {
         println!("{} System report: {} disk(s) monitored. Mail not sent.", 
                  "[TEST MODE]".yellow().bold(), 
@@ -344,14 +346,6 @@ async fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_inf
         Err(_) => "unknown time".to_string(),
     };
     
-    // Check if smartmontools is available for the email report
-    let smartctl_available = if cfg!(windows) {
-        std::process::Command::new("smartctl").arg("--version").output().is_ok() ||
-        std::process::Command::new("C:\\Program Files\\smartmontools\\bin\\smartctl.exe").arg("--version").output().is_ok()
-    } else {
-        std::process::Command::new("smartctl").arg("--version").output().is_ok()
-    };
-
     let mut body = format!(
         "System Disk Report\n\n\
          Device: {} ({})\n\
@@ -868,7 +862,7 @@ async fn main() {
     if cli.force_mail {
         // Force send comprehensive system report for all disks
         println!("\n{}", "Forced mail mode: Sending comprehensive system report...".yellow().bold());
-        if let Err(e) = send_system_report(&cfg, &disks, &system_info, true, debug).await {
+        if let Err(e) = send_system_report(&cfg, &disks, &system_info, true, debug, smartctl_available).await {
             eprintln!("{} {}", "ERROR Failed to send system report:".red().bold(), e);
             errors_occurred = true;
         } else {
@@ -915,7 +909,7 @@ async fn main() {
             }
             
             // Send one comprehensive report with all problem disks
-            if let Err(e) = send_system_report(&cfg, &disks, &system_info, false, debug).await {
+            if let Err(e) = send_system_report(&cfg, &disks, &system_info, false, debug, smartctl_available).await {
                 eprintln!("{} {}", "ERROR Failed to send system report:".red().bold(), e);
                 errors_occurred = true;
             } else {

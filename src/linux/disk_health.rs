@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use crate::system::SmartInfo;
 
-pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option<String>, Option<String>, Option<String>, bool, Option<u64>, Option<u64>, Option<i64>, Option<u64>, Option<u64>, String) {
+pub fn get_smart_status(disk_name: &str, debug: bool) -> SmartInfo {
     if debug {
         println!("[DEBUG] Getting SMART status for: {}", disk_name);
     }
@@ -34,7 +35,7 @@ pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option
             if debug {
                 println!("[DEBUG] Could not determine device for mount point: {}", disk_name);
             }
-            return (None, None, None, None, false, None, None, None, None, None, health_method);
+            return SmartInfo::unknown(health_method);
         }
     };
 
@@ -214,13 +215,25 @@ pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option
                                 smart_status = Some("OK".to_string());
                             }
                             
-                            return (smart_status, serial_number, brand, model, is_raid, power_on_hours, reallocated_sectors, temperature, pending_sectors, uncorrectable_sectors, health_method);
+                            return SmartInfo {
+                                smart_status,
+                                serial_number,
+                                brand,
+                                model,
+                                is_raid,
+                                power_on_hours,
+                                reallocated_sectors,
+                                temperature,
+                                pending_sectors,
+                                uncorrectable_sectors,
+                                health_method,
+                            };
                         }
                     }
                 }
             }
         }
-        
+
         if debug {
             println!("[DEBUG] smartctl didn't provide useful information, falling back to kernel methods");
         }
@@ -310,10 +323,22 @@ pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option
         
         if smart_status.is_some() {
             if debug {
-                println!("[DEBUG] Using MMC-specific results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}", 
+                println!("[DEBUG] Using MMC-specific results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}",
                          smart_status, model, serial_number, brand);
             }
-            return (smart_status, serial_number, brand, model, is_raid, power_on_hours, reallocated_sectors, temperature, pending_sectors, uncorrectable_sectors, health_method);
+            return SmartInfo {
+                smart_status,
+                serial_number,
+                brand,
+                model,
+                is_raid,
+                power_on_hours,
+                reallocated_sectors,
+                temperature,
+                pending_sectors,
+                uncorrectable_sectors,
+                health_method,
+            };
         }
     }
 
@@ -416,27 +441,19 @@ pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option
             // Check dmesg for disk errors
             if let Ok(dmesg_output) = Command::new("dmesg").output() {
                 if let Ok(dmesg_str) = String::from_utf8(dmesg_output.stdout) {
-                    // Look for recent disk-related errors
-                    let error_patterns = [
-                        &format!("{}.*error", device_base),
-                        &format!("{}.*fail", device_base),
-                        &format!("{}.*warning", device_base),
-                        &format!("{}.*i/o error", device_base),
-                    ];
-
-                    for _pattern in &error_patterns {
-                        if dmesg_str.lines().any(|line| {
-                            line.to_lowercase().contains(&device_base.to_lowercase()) &&
-                            (line.to_lowercase().contains("error") ||
-                             line.to_lowercase().contains("fail") ||
-                             line.to_lowercase().contains("warning") ||
-                             line.to_lowercase().contains("i/o error"))
-                        }) {
-                            smart_status = Some("WARNING".to_string());
-                            if debug {
-                                println!("[DEBUG] Found disk errors in dmesg for {}", device_base);
-                            }
-                            break;
+                    // Search dmesg for any error-related lines mentioning this device.
+                    let device_base_lower = device_base.to_lowercase();
+                    if dmesg_str.lines().any(|line| {
+                        let line_lower = line.to_lowercase();
+                        line_lower.contains(&device_base_lower) &&
+                        (line_lower.contains("error") ||
+                         line_lower.contains("fail") ||
+                         line_lower.contains("warning") ||
+                         line_lower.contains("i/o error"))
+                    }) {
+                        smart_status = Some("WARNING".to_string());
+                        if debug {
+                            println!("[DEBUG] Found disk errors in dmesg for {}", device_base);
                         }
                     }
                 }
@@ -466,9 +483,21 @@ pub fn get_smart_status(disk_name: &str, debug: bool) -> (Option<String>, Option
     }
 
     if debug {
-        println!("[DEBUG] Kernel-based results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}, RAID={}", 
+        println!("[DEBUG] Kernel-based results: SMART={:?}, Model={:?}, Serial={:?}, Brand={:?}, RAID={}",
                  smart_status, model, serial_number, brand, is_raid);
     }
 
-    (smart_status, serial_number, brand, model, is_raid, power_on_hours, reallocated_sectors, temperature, pending_sectors, uncorrectable_sectors, health_method)
+    SmartInfo {
+        smart_status,
+        serial_number,
+        brand,
+        model,
+        is_raid,
+        power_on_hours,
+        reallocated_sectors,
+        temperature,
+        pending_sectors,
+        uncorrectable_sectors,
+        health_method,
+    }
 }
