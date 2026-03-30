@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-30
+
+### Code Quality
+- **Critical & High Severity Fixes**: Addressed critical and high severity code quality issues identified during static analysis
+- **Improved Error Handling**: Replaced panic-prone patterns with proper `Result` propagation throughout the codebase
+- **Resource Management**: Fixed potential resource leaks and improved cleanup on error paths
+- **Unsafe Code Reduction**: Reduced reliance on unsafe patterns and replaced with idiomatic safe Rust alternatives
+
 ## [0.3.0] - 2025-07-26
 
 ### Performance Improvements
