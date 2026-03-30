@@ -168,7 +168,10 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
                 if ex.is_empty() { return false; }
                 let ex = ex.to_uppercase();
                 let disp = display_name.to_uppercase();
-                let found = disp.contains(&ex);
+                // Also match against mount_point (e.g. "H:\") so that
+                // excluded_disks entries like "H:" work correctly on Windows.
+                let mp = mount_point.to_uppercase();
+                let found = disp.contains(&ex) || mp.starts_with(&ex);
                 if found { found_excluded[i] = true; }
                 found
             })
