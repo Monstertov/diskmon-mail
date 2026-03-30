@@ -111,7 +111,7 @@ friendly_name: "Example device"
 - **smtp_security**: Security protocol for SMTP (`none`, `starttls`, or `ssl`).
 - **threshold_percent**: The minimum free disk space percentage before an alert is sent (1.0–100.0).
 - **send_mail_on_unknown_status**: If `true`, sends an alert even if disk health (SMART) status is unknown.
-- **excluded_disks**: List of disks to exclude from monitoring (by device name or drive letter).
+- **excluded_disks**: List of disks to exclude from monitoring. On Windows use drive letters with colon (e.g. `["C:", "D:"]`); on Linux use device names (e.g. `["sda", "nvme0n1"]`).
 - **health_check_enabled**: Enables or disables disk health checks (if `false`, only free space is monitored).
 - **smart_enabled**: Enables or disables SMART-based alerts (if `false`, SMART failures are ignored).
 - **friendly_name**: (Optional) Custom name for this system in alert emails (useful for identifying multiple systems).
