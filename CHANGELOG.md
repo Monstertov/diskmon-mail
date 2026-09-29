@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-30
+
+### Added
+- **Multiple email recipients** (fixes #5): `email_to` now accepts several addresses, either comma-separated (`"a@example.com, b@example.com"`) or as a YAML list. Every recipient receives the report. The `DISKMON_EMAIL_TO` environment variable accepts a comma-separated list too.
+
+### Changed
+- Recipient addresses are checked when the configuration is loaded, so a typo is reported at startup (naming the bad address) instead of after the disk scan.
+
+### Backward Compatibility
+- Existing configurations with a single `email_to` address work unchanged.
+
 ## [0.4.1] - 2026-03-30
 
 ### Bug Fixes
