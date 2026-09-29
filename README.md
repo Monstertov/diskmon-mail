@@ -84,7 +84,7 @@ smtp_user: user@example.com
 smtp_pass: password
 # Sender email address
 email_from: admin@example.com
-# Recipient email address
+# Recipient email address(es): one address, a comma-separated list, or a YAML list
 email_to: alerts@example.com
 # SMTP security: none, starttls, or ssl
 smtp_security: starttls
@@ -107,7 +107,7 @@ friendly_name: "Example device"
 - **mail_enabled**: Enables or disables email notifications for disk alerts.
 - **smtp_server / smtp_port**: The SMTP server and port used to send alert emails.
 - **smtp_user / smtp_pass**: Credentials for SMTP authentication (leave blank if not required).
-- **email_from / email_to**: The sender and recipient email addresses for alerts.
+- **email_from / email_to**: The sender and recipient email addresses for alerts. `email_to` accepts one address, several addresses separated by commas, or a YAML list (see [Multiple Recipients](#multiple-recipients)).
 - **smtp_security**: Security protocol for SMTP (`none`, `starttls`, or `ssl`).
 - **threshold_percent**: The minimum free disk space percentage before an alert is sent (1.0–100.0).
 - **send_mail_on_unknown_status**: If `true`, sends an alert even if disk health (SMART) status is unknown.
@@ -118,6 +118,25 @@ friendly_name: "Example device"
 
 **Tip:** All options are documented in the example config. Only change what you need for your environment.
 
+### Multiple Recipients
+
+`email_to` accepts more than one address (new in v0.5.0). Every recipient receives the same report. Use either format:
+
+```yaml
+# Comma-separated (quote the value)
+email_to: "admin@example.com, oncall@example.com"
+```
+
+```yaml
+# YAML list
+email_to:
+  - admin@example.com
+  - oncall@example.com
+  - "Ops Team <ops@example.com>"
+```
+
+A single address (`email_to: alerts@example.com`) keeps working as before. The `DISKMON_EMAIL_TO` environment variable accepts a comma-separated list too.
+
 ### Secure Credential Management (New in v0.3.0)
 
 For enhanced security, you can store SMTP credentials outside the configuration file using environment variables:
@@ -127,7 +146,7 @@ For enhanced security, you can store SMTP credentials outside the configuration 
 export DISKMON_SMTP_USER="your-email@domain.com"
 export DISKMON_SMTP_PASS="your-app-password"
 export DISKMON_EMAIL_FROM="monitoring@yourdomain.com"
-export DISKMON_EMAIL_TO="admin@yourdomain.com"
+export DISKMON_EMAIL_TO="admin@yourdomain.com,oncall@yourdomain.com"
 
 # Then run diskmon-mail (credentials will override config file values)
 ./diskmon-mail
@@ -138,7 +157,7 @@ export DISKMON_EMAIL_TO="admin@yourdomain.com"
 set DISKMON_SMTP_USER=your-email@domain.com
 set DISKMON_SMTP_PASS=your-app-password
 set DISKMON_EMAIL_FROM=monitoring@yourdomain.com
-set DISKMON_EMAIL_TO=admin@yourdomain.com
+set DISKMON_EMAIL_TO=admin@yourdomain.com,oncall@yourdomain.com
 
 # Then run diskmon-mail
 diskmon-mail.exe

@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 use std::env;
+use lettre::message::Mailboxes;
+use serde::{Deserialize, Deserializer, de::Error as _};
 
 pub const CONFIG_PATH: &str = "config.yaml";
 
@@ -12,7 +14,8 @@ pub struct Config {
     pub smtp_user: String,
     pub smtp_pass: String,
     pub email_from: String,
-    pub email_to: String,
+    #[serde(deserialize_with = "deserialize_recipients")]
+    pub email_to: Vec<String>, // One address, a comma-separated string, or a YAML list
     pub smtp_security: Option<String>, // "none", "starttls", "ssl"
     pub threshold_percent: Option<f64>, // Disk space threshold percentage
     pub send_mail_on_unknown_status: Option<bool>,
@@ -21,6 +24,35 @@ pub struct Config {
     pub smart_enabled: Option<bool>, // Enable/disable SMART-based alerts (default: true)
     pub friendly_name: Option<String>, // New: single friendly name
     pub excluded_disks: Option<Vec<String>>, // List of disks to exclude (drive letters or device names)
+}
+
+/// Accepts `email_to` as a single string (old format, may be comma-separated) or a YAML list of strings.
+fn deserialize_recipients<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    use serde_yaml::Value;
+    let bad = || D::Error::custom("expected an email address or a list of email addresses");
+    match Value::deserialize(d)? {
+        Value::String(s) => Ok(vec![s]),
+        Value::Sequence(items) => items
+            .into_iter()
+            .map(|v| v.as_str().map(String::from).ok_or_else(bad))
+            .collect(),
+        _ => Err(bad()),
+    }
+}
+
+/// Parses all `email_to` entries into mailboxes. Each entry may hold several comma-separated addresses.
+pub fn parse_recipients(entries: &[String]) -> Result<Mailboxes, String> {
+    let mut all = Mailboxes::new();
+    for entry in entries.iter().map(|e| e.trim()).filter(|e| !e.is_empty()) {
+        let parsed: Mailboxes = entry.parse().map_err(|e| format!("invalid address '{entry}' ({e}); separate multiple addresses with commas"))?;
+        for mailbox in parsed {
+            all.push(mailbox);
+        }
+    }
+    if all.iter().next().is_none() {
+        return Err("no recipient address".to_string());
+    }
+    Ok(all)
 }
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, String> {
@@ -83,7 +115,7 @@ fn apply_env_overrides(mut config: Config) -> Config {
     
     if let Ok(email_to) = env::var("DISKMON_EMAIL_TO") {
         if !email_to.trim().is_empty() {
-            config.email_to = email_to;
+            config.email_to = vec![email_to];
         }
     }
     
@@ -91,29 +123,30 @@ fn apply_env_overrides(mut config: Config) -> Config {
 }
 
 fn validate_config(config: &Config) -> Result<(), String> {
-    let mut missing_keys = Vec::new();
+    let mut missing_keys: Vec<String> = Vec::new();
     let mut warnings = Vec::new();
     
     // Check for empty required string fields (except smtp_user and smtp_pass)
     if config.smtp_server.trim().is_empty() {
-        missing_keys.push("smtp_server");
+        missing_keys.push("smtp_server".to_string());
     }
     if config.email_from.trim().is_empty() {
-        missing_keys.push("email_from");
+        missing_keys.push("email_from".to_string());
     }
-    if config.email_to.trim().is_empty() {
-        missing_keys.push("email_to");
+    let email_to_empty = config.email_to.iter().all(|e| e.trim().is_empty());
+    if email_to_empty {
+        missing_keys.push("email_to".to_string());
     }
     
     // Check port is valid
     if config.smtp_port == 0 {
-        missing_keys.push("smtp_port (must be 1-65535)");
+        missing_keys.push("smtp_port (must be 1-65535)".to_string());
     }
     
     // Validate threshold_percent if provided
     if let Some(threshold) = config.threshold_percent {
         if threshold < 1.0 || threshold > 100.0 {
-            missing_keys.push("threshold_percent (must be between 1.0 and 100.0)");
+            missing_keys.push("threshold_percent (must be between 1.0 and 100.0)".to_string());
         }
     }
     
@@ -121,7 +154,7 @@ fn validate_config(config: &Config) -> Result<(), String> {
     if let Some(ref sec) = config.smtp_security {
         let sec = sec.to_lowercase();
         if sec != "none" && sec != "starttls" && sec != "ssl" {
-            missing_keys.push("smtp_security (must be one of: none, starttls, ssl)");
+            missing_keys.push("smtp_security (must be one of: none, starttls, ssl)".to_string());
         }
         if sec == "none" {
             warnings.push("SMTP security is set to 'none'. This is insecure and not recommended.".to_string());
@@ -130,10 +163,17 @@ fn validate_config(config: &Config) -> Result<(), String> {
     
     // Validate email addresses (basic check)
     if !config.email_from.contains('@') {
-        missing_keys.push("email_from (must be a valid email address)");
+        missing_keys.push("email_from (must be a valid email address)".to_string());
     }
-    if !config.email_to.contains('@') {
-        missing_keys.push("email_to (must be a valid email address)");
+    if !email_to_empty {
+        if let Err(e) = parse_recipients(&config.email_to) {
+            // Only fatal when mail is sent; with mail disabled the old check (just an '@') was enough.
+            if config.mail_enabled {
+                missing_keys.push(format!("email_to ({e})"));
+            } else {
+                warnings.push(format!("email_to: {e}"));
+            }
+        }
     }
     
     // Warn if debug is enabled
@@ -178,4 +218,59 @@ fn validate_config(config: &Config) -> Result<(), String> {
         eprintln!("[CONFIG WARNING] {}", &warnings.join(" | "));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lettre::{Message, message::header::To};
+
+    fn cfg_with(email_to: &str) -> Result<Config, serde_yaml::Error> {
+        serde_yaml::from_str(&format!(
+            "mail_enabled: true\nsmtp_server: smtp.example.com\nsmtp_port: 587\nsmtp_user: \"\"\nsmtp_pass: \"\"\nemail_from: a@example.com\nemail_to: {email_to}\n"
+        ))
+    }
+
+    fn count(email_to: &str) -> usize {
+        let cfg = cfg_with(email_to).unwrap();
+        parse_recipients(&cfg.email_to).unwrap().iter().count()
+    }
+
+    #[test]
+    fn email_to_formats() {
+        assert_eq!(count("alerts@example.com"), 1); // pre-0.5.0 format
+        assert_eq!(count("\"a@example.com, b@example.com\""), 2);
+        assert_eq!(count("a@example.com,b@example.com"), 2);
+        assert_eq!(count("[a@example.com, b@example.com, c@example.com]"), 3);
+        assert_eq!(count("\n  - a@example.com\n  - b@example.com, c@example.com"), 3);
+        assert_eq!(count("\"Ops Team <ops@example.com>, b@example.com\""), 2);
+    }
+
+    #[test]
+    fn email_to_rejects_bad_input() {
+        assert!(cfg_with("42").is_err());
+        assert!(cfg_with("[a@example.com, {x: 1}]").is_err());
+        for bad in ["a@example.com, not-an-address", "a@example.com; b@example.com", "a@example.com b@example.com"] {
+            let err = parse_recipients(&[bad.to_string()]);
+            assert!(err.is_err(), "accepted {bad:?} as {:?}", err.map(|m| m.to_string()));
+        }
+        assert!(parse_recipients(&[" ".to_string()]).is_err());
+
+        let cfg = cfg_with("\"a@example.com, broken\"").unwrap();
+        assert!(validate_config(&cfg).is_err());
+        let cfg = Config { mail_enabled: false, ..cfg };
+        assert!(validate_config(&cfg).is_ok(), "mail disabled keeps running as before");
+    }
+
+    #[test]
+    fn message_goes_to_every_recipient() {
+        let to = parse_recipients(&["a@example.com, b@example.com".into(), "c@example.com".into()]).unwrap();
+        let msg = Message::builder()
+            .from("x@example.com".parse().unwrap())
+            .mailbox(To::from(to))
+            .subject("t")
+            .body(String::new())
+            .unwrap();
+        assert_eq!(msg.envelope().to().len(), 3);
+    }
 }

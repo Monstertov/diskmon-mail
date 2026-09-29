@@ -1,7 +1,7 @@
 // Author: Monstertov
 // Purpose: Cross-platform disk space monitor and email alert tool (Rust version of diskmon.py)
 
-use lettre::{Message, SmtpTransport, Transport, transport::smtp::authentication::Credentials, transport::smtp::client::Tls, transport::smtp::client::TlsParameters};
+use lettre::{Message, SmtpTransport, message::header, Transport, transport::smtp::authentication::Credentials, transport::smtp::client::Tls, transport::smtp::client::TlsParameters};
 use clap::Parser;
 use colored::*;
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
@@ -540,9 +540,11 @@ body.push_str(&format!(
     body.push_str("This is an automated report from DiskMon-Mail.\n");
     body.push_str("For more information, visit: https://github.com/Monstertov/diskmon-mail");
     
+    let recipients = config::parse_recipients(&cfg.email_to)
+        .map_err(|e| format!("Invalid recipient email address: {e}"))?;
     let email = Message::builder()
         .from(cfg.email_from.parse().map_err(|e| format!("Invalid sender email address: {e}"))?)
-        .to(cfg.email_to.parse().map_err(|e| format!("Invalid recipient email address: {e}"))?)
+        .mailbox(header::To::from(recipients))
         .subject(subject)
         .body(body)
         .map_err(|e| format!("Failed to build email message: {e}"))?;

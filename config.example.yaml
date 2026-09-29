@@ -4,7 +4,7 @@ smtp_port: 587  # SMTP server port
 smtp_user: user@example.com  # SMTP username (leave blank if not required)
 smtp_pass: password  # SMTP password (leave blank if not required)
 email_from: admin@example.com  # Sender email address
-email_to: alerts@example.com  # Recipient email address
+email_to: alerts@example.com  # Recipient(s): one address, "a@example.com, b@example.com", or a YAML list
 smtp_security: starttls  # SMTP security: none, starttls, or ssl
 threshold_percent: 10.0  # Alert if free space is below this percent (1.0-100.0)
 send_mail_on_unknown_status: false  # Send mail if SMART status is unknown
