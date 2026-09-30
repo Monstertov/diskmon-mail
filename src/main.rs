@@ -4,10 +4,9 @@
 use lettre::{Message, SmtpTransport, message::header, Transport, transport::smtp::authentication::Credentials, transport::smtp::client::Tls, transport::smtp::client::TlsParameters};
 use clap::Parser;
 use colored::*;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::Duration;
 use tokio::time::timeout;
 use futures::future::join_all;
-use backoff::{ExponentialBackoff, backoff::Backoff};
 use log::{info, warn, error, debug};
 
 mod config;
@@ -168,10 +167,10 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
                 if ex.is_empty() { return false; }
                 let ex = ex.to_uppercase();
                 let disp = display_name.to_uppercase();
-                // Also match against mount_point (e.g. "H:\") so that
-                // excluded_disks entries like "H:" work correctly on Windows.
+                // Match "H:" against the mount point "H:\" (or the exact display name "Drive H").
+                // A substring match on the display name made "D" exclude every "Drive X".
                 let mp = mount_point.to_uppercase();
-                let found = disp.contains(&ex) || mp.starts_with(&ex);
+                let found = disp == ex || mp.starts_with(&ex);
                 if found { found_excluded[i] = true; }
                 found
             })
@@ -180,7 +179,9 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
                 let ex = ex.trim();
                 if ex.is_empty() { return false; }
                 let dev = disk.name().to_str().unwrap_or("");
-                let found = dev == ex;
+                let base = dev.rsplit('/').next().unwrap_or(dev);
+                // "sda" excludes all its partitions; "sda1", "/dev/sda1" and "vg-root" match exactly.
+                let found = dev == ex || base == ex || system::parent_disk(base) == ex;
                 if found { found_excluded[i] = true; }
                 found
             })
@@ -198,7 +199,7 @@ async fn get_monitored_disks(cfg: &config::Config, debug: bool, smart_timeout: u
 
     // Collect excluded disks that were not found
     for (i, found) in found_excluded.iter().enumerate() {
-        if !*found {
+        if !*found && !excluded[i].trim().is_empty() {
             excluded_not_found.push(excluded[i].clone());
         }
     }
@@ -326,7 +327,9 @@ async fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_inf
     }
     
     // Determine friendly name for this device (by hostname)
-    let display_name = cfg.friendly_name.as_deref().unwrap_or(&system_info.hostname);
+    let display_name = cfg.friendly_name.as_deref()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(&system_info.hostname);
 
     let subject = if forced {
         format!("[FORCED] System Disk Report - {} ({})", display_name, format!("{} {} {}", system_info.os_name, system_info.os_version, system_info.architecture))
@@ -338,16 +341,7 @@ async fn send_system_report(cfg: &config::Config, disks: &[DiskInfo], system_inf
     let threshold = cfg.threshold_percent.unwrap_or(10.0);
     
     // Format current time in DD-MM-YYYY HH:MM:SS format
-    let datetime = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(duration) => {
-            let secs = duration.as_secs();
-            let datetime = chrono::DateTime::from_timestamp(secs as i64, 0)
-                .unwrap_or_else(|| chrono::Utc::now());
-            let local_datetime = datetime.with_timezone(&chrono::Local);
-            local_datetime.format("%d-%m-%Y %H:%M:%S").to_string()
-        },
-        Err(_) => "unknown time".to_string(),
-    };
+    let datetime = chrono::Local::now().format("%d-%m-%Y %H:%M:%S").to_string();
     
     let mut body = format!(
         "System Disk Report\n\n\
@@ -552,7 +546,7 @@ body.push_str(&format!(
     let use_auth = !(cfg.smtp_user.trim().is_empty() && cfg.smtp_pass.trim().is_empty());
     let security = cfg.smtp_security.as_deref().unwrap_or("starttls").to_lowercase();
     if debug {
-        println!("[DEBUG] smtp_security from config: {:?}", cfg.smtp_security);
+        eprintln!("[DEBUG] smtp_security from config: {:?}", cfg.smtp_security);
     }
     let mailer = match security.as_str() {
         "none" => {
@@ -585,34 +579,18 @@ body.push_str(&format!(
         }
     };
     
-    // Send email with retry logic
-    let mut backoff = ExponentialBackoff::default();
-    backoff.max_elapsed_time = Some(Duration::from_secs(300)); // 5 minutes max
-    backoff.initial_interval = Duration::from_secs(1);
-    backoff.max_interval = Duration::from_secs(30);
-    
-    let mut attempt = 1;
-    let max_attempts = 3;
-    
-    loop {
-        match mailer.send(&email) {
-            Ok(_) => break,
-            Err(e) => {
-                error!("SMTP attempt {} failed: {}", attempt, e);
-                
-                if attempt >= max_attempts {
-                    return Err(format!("SMTP error after {} attempts: {}", max_attempts, e));
-                }
-                
-                if let Some(delay) = backoff.next_backoff() {
-                    warn!("Retrying SMTP in {:?}...", delay);
-                    tokio::time::sleep(delay).await;
-                    attempt += 1;
-                } else {
-                    return Err(format!("SMTP error: {}", e));
-                }
-            }
+    // Send email, retrying transient failures (network, 4xx). Permanent 5xx errors such as a
+    // rejected login or recipient will not change on retry.
+    const MAX_ATTEMPTS: u32 = 3;
+    for attempt in 1..=MAX_ATTEMPTS {
+        let Err(e) = mailer.send(&email) else { break };
+        error!("SMTP attempt {} failed: {}", attempt, e);
+        if e.is_permanent() || attempt == MAX_ATTEMPTS {
+            return Err(format!("SMTP error after {} attempt(s): {}", attempt, e));
         }
+        let delay = Duration::from_secs(2u64.pow(attempt)); // 2s, 4s
+        warn!("Retrying SMTP in {:?}...", delay);
+        tokio::time::sleep(delay).await;
     }
     
     println!("{} System report sent for {} disk(s){}", 
@@ -624,8 +602,11 @@ body.push_str(&format!(
 
 #[tokio::main]
 async fn main() {
+    // Parse arguments first so --help and --version work without a config file
+    let cli = Cli::parse();
+
     // Load and validate configuration first to check debug setting
-    let cfg = match config::load_config(config::CONFIG_PATH) {
+    let cfg = match config::load_config(config::config_path()) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("{} {}", "Configuration error:".red().bold(), e);
@@ -647,13 +628,12 @@ async fn main() {
 
     if debug {
         debug!("Debug mode enabled");
-        debug!("Loaded config: {:#?}", cfg);
+        let redacted = config::Config { smtp_pass: "<redacted>".to_string(), ..cfg.clone() };
+        debug!("Loaded config: {:#?}", redacted);
     }
 
     // Initialize color support based on terminal capabilities
     init_colors();
-    
-    let cli = Cli::parse();
 
     // Print smartmontools detection ONCE
     let smartctl_available = if cfg!(windows) {
@@ -673,15 +653,17 @@ async fn main() {
     if debug {
         debug!("System info: {:#?}", system_info);
     }
-    println!("{} {} {} {} ({})", 
-             "System:".blue().bold(), 
-             system_info.os_name.green(), 
-             system_info.os_version.green(), 
-             system_info.architecture.green(),
-             system_info.hostname.cyan());
+    if !cli.json {
+        println!("{} {} {} {} ({})", 
+                 "System:".blue().bold(), 
+                 system_info.os_name.green(), 
+                 system_info.os_version.green(), 
+                 system_info.architecture.green(),
+                 system_info.hostname.cyan());
 
-    // Show loading message
-    println!("{}", "Loading information, please wait...".yellow().italic());
+        // Show loading message
+        println!("{}", "Loading information, please wait...".yellow().italic());
+    }
     
     // Get all monitored disks
     let disks = get_monitored_disks(&cfg, debug, cli.smart_timeout).await;
@@ -690,6 +672,48 @@ async fn main() {
         eprintln!("{} This could indicate a system error or all disks are removable/network drives.", 
                   "No monitored disks found.".red().bold());
         std::process::exit(1);
+    }
+
+    // JSON mode prints nothing but the JSON document on stdout (logs and warnings go to stderr)
+    if cli.json {
+        // JSON output mode
+        #[derive(serde::Serialize)]
+        struct JsonOutput {
+            system_info: system::SystemInfo,
+            disks: Vec<DiskInfo>,
+            threshold_percent: f64,
+            smartctl_available: bool,
+            alerts: Vec<String>,
+        }
+        
+        let threshold = cfg.threshold_percent.unwrap_or(10.0);
+        let mut alerts = Vec::new();
+        
+        for disk in &disks {
+            if disk.free_space_percent < threshold {
+                alerts.push(format!("{}: Low space ({:.2}%)", disk.display_name, disk.free_space_percent));
+            }
+            if disk.smart_status.as_deref().unwrap_or("OK").to_uppercase() != "OK" {
+                alerts.push(format!("{}: SMART failure ({})", disk.display_name, disk.smart_status.as_deref().unwrap_or("N/A")));
+            }
+        }
+        
+        let output = JsonOutput {
+            system_info,
+            disks,
+            threshold_percent: threshold,
+            smartctl_available,
+            alerts,
+        };
+        
+        match serde_json::to_string_pretty(&output) {
+            Ok(json) => println!("{}", json),
+            Err(e) => {
+                error!("Failed to serialize JSON output: {}", e);
+                std::process::exit(1);
+            }
+        }
+        std::process::exit(0);
     }
 
     println!("{} {} disk(s):", "Monitoring".blue().bold(), disks.len().to_string().green());
@@ -786,46 +810,6 @@ async fn main() {
         println!("{}", "WARNING: RAID device(s) detected. Health information may be unavailable or unreliable. This tool should NOT be used for health monitoring tasks on RAID systems.".red().bold());
     }
 
-    if cli.json {
-        // JSON output mode
-        #[derive(serde::Serialize)]
-        struct JsonOutput {
-            system_info: system::SystemInfo,
-            disks: Vec<DiskInfo>,
-            threshold_percent: f64,
-            smartctl_available: bool,
-            alerts: Vec<String>,
-        }
-        
-        let threshold = cfg.threshold_percent.unwrap_or(10.0);
-        let mut alerts = Vec::new();
-        
-        for disk in &disks {
-            if disk.free_space_percent < threshold {
-                alerts.push(format!("{}: Low space ({:.2}%)", disk.display_name, disk.free_space_percent));
-            }
-            if disk.smart_status.as_deref().unwrap_or("OK").to_uppercase() != "OK" {
-                alerts.push(format!("{}: SMART failure ({})", disk.display_name, disk.smart_status.as_deref().unwrap_or("N/A")));
-            }
-        }
-        
-        let output = JsonOutput {
-            system_info,
-            disks,
-            threshold_percent: threshold,
-            smartctl_available,
-            alerts,
-        };
-        
-        match serde_json::to_string_pretty(&output) {
-            Ok(json) => println!("{}", json),
-            Err(e) => {
-                error!("Failed to serialize JSON output: {}", e);
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
 
     if cli.smart {
         println!("\n{}", "SMART Status Details:".blue().bold());
@@ -856,7 +840,7 @@ async fn main() {
                 println!("    {}", "WARNING: High temperature!".red().bold());
             }
         }
-        return;
+        std::process::exit(0);
     }
 
     // Handle email alerts
@@ -945,4 +929,8 @@ async fn main() {
         eprintln!("{}", "Some errors occurred during alert processing.".red().bold());
         std::process::exit(2);
     }
+
+    // Exit explicitly: a SMART check that hit --smart-timeout can still be running in a
+    // blocking thread, and returning from main would make the runtime wait for it.
+    std::process::exit(0);
 }

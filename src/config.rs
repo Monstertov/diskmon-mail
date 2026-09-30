@@ -1,20 +1,24 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::env;
 use lettre::message::Mailboxes;
 use serde::{Deserialize, Deserializer, de::Error as _};
 
 pub const CONFIG_PATH: &str = "config.yaml";
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Debug, Clone)]
 pub struct Config {
     pub mail_enabled: bool,
     pub smtp_server: String,
     pub smtp_port: u16,
+    // The next four may be left out when set through DISKMON_* environment variables.
+    #[serde(default)]
     pub smtp_user: String,
+    #[serde(default)]
     pub smtp_pass: String,
+    #[serde(default)]
     pub email_from: String,
-    #[serde(deserialize_with = "deserialize_recipients")]
+    #[serde(default, deserialize_with = "deserialize_recipients")]
     pub email_to: Vec<String>, // One address, a comma-separated string, or a YAML list
     pub smtp_security: Option<String>, // "none", "starttls", "ssl"
     pub threshold_percent: Option<f64>, // Disk space threshold percentage
@@ -55,6 +59,20 @@ pub fn parse_recipients(entries: &[String]) -> Result<Mailboxes, String> {
     Ok(all)
 }
 
+/// config.yaml in the working directory (as before), otherwise next to the executable,
+/// so cron and Task Scheduler jobs work without setting a working directory.
+pub fn config_path() -> PathBuf {
+    let local = PathBuf::from(CONFIG_PATH);
+    if local.exists() {
+        return local;
+    }
+    env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(CONFIG_PATH)))
+        .filter(|p| p.exists())
+        .unwrap_or(local)
+}
+
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, String> {
     // Check if config file exists
     if !path.as_ref().exists() {
@@ -84,11 +102,9 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config, String> {
     let config: Config = serde_yaml::from_str(&data)
         .map_err(|e| format!("Failed to parse config YAML: {e}"))?;
     
-    // Validate required fields
-    validate_config(&config)?;
-    
-    // Apply environment variable overrides for sensitive data
+    // Apply environment variable overrides first so their values are validated too
     let config = apply_env_overrides(config);
+    validate_config(&config)?;
     
     Ok(config)
 }
@@ -145,7 +161,7 @@ fn validate_config(config: &Config) -> Result<(), String> {
     
     // Validate threshold_percent if provided
     if let Some(threshold) = config.threshold_percent {
-        if threshold < 1.0 || threshold > 100.0 {
+        if !(1.0..=100.0).contains(&threshold) { // also rejects NaN
             missing_keys.push("threshold_percent (must be between 1.0 and 100.0)".to_string());
         }
     }
@@ -260,6 +276,25 @@ mod tests {
         assert!(validate_config(&cfg).is_err());
         let cfg = Config { mail_enabled: false, ..cfg };
         assert!(validate_config(&cfg).is_ok(), "mail disabled keeps running as before");
+    }
+
+    #[test]
+    fn threshold_must_be_a_number_in_range() {
+        for bad in [f64::NAN, 0.5, 100.5] {
+            let cfg = Config { threshold_percent: Some(bad), ..cfg_with("a@example.com").unwrap() };
+            assert!(validate_config(&cfg).is_err(), "{bad}");
+        }
+        let cfg = Config { threshold_percent: Some(10.0), ..cfg_with("a@example.com").unwrap() };
+        assert!(validate_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn credentials_and_addresses_may_come_from_env_only() {
+        // Parses without smtp_user/smtp_pass/email_from/email_to; validation still demands addresses.
+        let cfg: Config = serde_yaml::from_str("mail_enabled: true\nsmtp_server: smtp.example.com\nsmtp_port: 587\n").unwrap();
+        assert!(cfg.smtp_pass.is_empty() && cfg.email_to.is_empty());
+        let err = validate_config(&cfg).unwrap_err();
+        assert!(err.contains("email_from") && err.contains("email_to"), "{err}");
     }
 
     #[test]
