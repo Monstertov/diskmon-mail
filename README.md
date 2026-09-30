@@ -111,12 +111,14 @@ friendly_name: "Example device"
 - **smtp_security**: Security protocol for SMTP (`none`, `starttls`, or `ssl`).
 - **threshold_percent**: The minimum free disk space percentage before an alert is sent (1.0–100.0).
 - **send_mail_on_unknown_status**: If `true`, sends an alert even if disk health (SMART) status is unknown.
-- **excluded_disks**: List of disks to exclude from monitoring. On Windows use drive letters with colon (e.g. `["C:", "D:"]`); on Linux use device names (e.g. `["sda", "nvme0n1"]`).
+- **excluded_disks**: List of disks to exclude from monitoring. On Windows use drive letters with colon (e.g. `["C:", "D:"]`); on Linux use device names (e.g. `["sda", "nvme0n1"]`). On Linux a whole-disk name such as `sda` excludes all of its partitions, and a partition name such as `sda1` excludes only that partition.
 - **health_check_enabled**: Enables or disables disk health checks (if `false`, only free space is monitored).
 - **smart_enabled**: Enables or disables SMART-based alerts (if `false`, SMART failures are ignored).
 - **friendly_name**: (Optional) Custom name for this system in alert emails (useful for identifying multiple systems).
 
 **Tip:** All options are documented in the example config. Only change what you need for your environment.
+
+**Where the config is read from:** `config.yaml` in the current working directory. If there is none, `config.yaml` next to the executable is used (v0.5.1 and later), so cron jobs and scheduled tasks work without setting a working directory.
 
 ### Multiple Recipients
 
@@ -163,7 +165,7 @@ set DISKMON_EMAIL_TO=admin@yourdomain.com,oncall@yourdomain.com
 diskmon-mail.exe
 ```
 
-This approach keeps sensitive credentials out of configuration files and supports modern security practices.
+This approach keeps sensitive credentials out of configuration files and supports modern security practices. Since v0.5.1, `smtp_user`, `smtp_pass`, `email_from` and `email_to` can be left out of `config.yaml` entirely when they are set through these variables, and the values from the environment are validated at startup like the ones in the file.
 
 ## New in Version 0.3.0 - Performance & Reliability Improvements
 
@@ -183,7 +185,7 @@ This approach keeps sensitive credentials out of configuration files and support
 - **Improved TLS**: Enhanced certificate validation for secure email delivery
 
 ### Monitoring System Integration
-- **JSON Output**: Use `--json` for machine-readable output compatible with:
+- **JSON Output**: Use `--json` for machine-readable output (stdout contains only the JSON document; logs and warnings go to stderr) compatible with:
   - Nagios/Icinga monitoring systems
   - Zabbix infrastructure monitoring
   - Prometheus metrics collection
@@ -348,7 +350,7 @@ This will send test emails for all disks regardless of available space. In v0.3.
 
 ### Common Issues
 
-1. **"Configuration error"**: Check that `config.yaml` exists in the same directory as the executable
+1. **"Configuration error"**: Check that `config.yaml` exists in the working directory or next to the executable
 2. **"SMTP error"**: Verify your SMTP server settings and credentials (v0.3.0 includes automatic retry for transient issues)
 3. **"No monitored disks found"**: Ensure you have local disks mounted
 4. **Permission denied**: Run with appropriate permissions (admin/root if needed)
@@ -414,7 +416,7 @@ For Raspberry Pi systems with SD cards, smartmontools provides limited support, 
 
 ## System Requirements
 
-- **Windows**: Windows 7 or later
+- **Windows**: Windows 10 or later (Windows Server 2016 or later)
 - **Linux**: Most distributions (glibc-based)
 - **ARM**: Raspberry Pi, ARM servers, embedded systems
 - **Memory**: Minimal (typically < 10MB RAM)
