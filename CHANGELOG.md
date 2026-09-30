@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-30
+
+Audit release: bug and security fixes. No configuration changes required.
+
+### Bug Fixes
+- **Linux disk health checks never ran**: the device name was looked up as a mount point, so every Linux disk showed `SMART: N/A` even with smartmontools installed. The device is now resolved directly.
+- **Failing disks were not reported**: smartctl signals a failing disk with a non-zero exit code (for example 8), and that output was thrown away. Output is now used unless smartctl reports a command line or device open error (Linux and Windows).
+- **SMART attributes were always empty**: power-on hours, reallocated/pending/uncorrectable sectors and temperature are now read (`-A` was missing and the attribute table was parsed incorrectly). ATA and NVMe formats are supported.
+- **Linux kernel fallback**: fixed the sysfs path (model, serial and vendor are now read), SD card partition names such as `mmcblk0p1`, and SD card manufacturer ids. Removed checks that read I/O timing counters as error counts and ran `fsck -n` on mounted filesystems. Without smartctl, a disk shows `WARNING` only when the kernel log has I/O errors for it; otherwise its status stays unknown (as before).
+- **Linux `excluded_disks` did not work**: entries such as `sda` or `nvme0n1` never matched. Whole-disk names now exclude all their partitions, partition names exclude that partition.
+- **Windows `excluded_disks`**: an entry without a colon, such as `D`, excluded every drive. It now only matches that drive.
+- **Spurious warning** "The following excluded_disks were not found:" with the example config's `[""]`.
+- **`--json` output was not valid JSON**: human-readable lines were printed before the JSON document. stdout now contains only JSON; debug output goes to stderr.
+- **`--help` and `--version` needed a config file**.
+- **Config next to the executable**: `config.yaml` is now also found next to the executable when it is not in the working directory, which is what the README and the cron examples assume.
+- **Environment variable overrides**: `DISKMON_*` values are now applied before validation. Credentials and addresses can live only in the environment, and their values are validated at startup.
+- **`--smart-timeout` did not end the run**: after a timeout the process waited for the hung disk check at exit. It now exits right away.
+- **SMTP retries**: permanent errors (5xx, such as a rejected login or recipient) are no longer retried. Transient errors are still retried up to 3 times.
+- `threshold_percent: .nan` was accepted; an empty `friendly_name` produced an empty device name in reports.
+
+### Security
+- Debug mode printed the SMTP password as part of the loaded configuration. It is now redacted.
+
+### Maintenance
+- Removed the unmaintained `backoff` crate and the unused `wmi` crate; trimmed `winapi` and `tokio` features. OpenSSL is only built for Linux (Windows uses the system TLS stack, as before).
+- `Cargo.lock` is now committed for reproducible builds.
+- Unit tests for recipient parsing, smartctl parsing, exit codes, partition names and kernel log matching.
+- Documentation: Windows 10 or later is required (Rust dropped Windows 7/8 support).
+
 ## [0.5.0] - 2026-09-30
 
 ### Added

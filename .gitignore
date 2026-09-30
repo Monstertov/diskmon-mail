@@ -20,7 +20,6 @@ compile.sh
 clean.sh
 /target/
 **/*.rs.bk
-Cargo.lock
 /builds/
 
 # dev
