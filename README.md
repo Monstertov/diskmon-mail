@@ -1,10 +1,13 @@
 # DiskMon-Mail
 
 [![GitHub Release](https://img.shields.io/github/v/release/Monstertov/diskmon-mail?style=flat-square)](https://github.com/Monstertov/diskmon-mail/releases)
-[![Rust](https://custom-icon-badges.demolab.com/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=microsoft&logoColor=white)](https://www.microsoft.com/windows)
-[![Linux](https://custom-icon-badges.demolab.com/badge/Linux-FFFFFF?logo=linux&logoColor=black)](https://linuxfoundation.org/)
-[![ARM](https://custom-icon-badges.demolab.com/badge/ARM-0091BD?logo=arm&logoColor=white)](https://www.arm.com/)
+
+<p align="center">
+  <a href="https://www.rust-lang.org/" target="_blank"><img src="https://custom-icon-badges.demolab.com/badge/Rust-000000?logo=rust&logoColor=white" alt="Rust" /></a>
+  <a href="https://www.microsoft.com/windows" target="_blank"><img src="https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white" alt="Windows" /></a>
+  <a href="https://www.linuxfoundation.org/" target="_blank"><img src="https://custom-icon-badges.demolab.com/badge/Linux-FCC624?logo=linux&logoColor=black" alt="Linux" /></a>
+  <a href="https://www.arm.com/" target="_blank"><img src="https://custom-icon-badges.demolab.com/badge/ARM-0091BD?logo=arm&logoColor=white" alt="ARM" /></a>
+</p>
 
 A lightweight, cross-platform disk space monitoring tool that sends email alerts when disk space falls below a configurable threshold and includes optional disk health monitoring. Perfect for system administrators who need automated disk space monitoring and health status across Windows, Linux, and ARM-based systems.
 
